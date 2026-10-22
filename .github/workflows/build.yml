@@ -23,14 +23,18 @@ jobs:
           sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
           pip3 install --user --upgrade buildozer cython virtualenv
           
-      # Aceptar licencias de Android SDK de forma explícita
-      - name: Aceptar Licencias de Android
+      # Aceptar licencias de Android SDK e instalar Aidl
+      - name: Aceptar Licencias y Preparar SDK
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
+          export APP_ANDROID_ACCEPT_SDK_LICENSE=1
+          yes | sdkmanager --licenses
+          sdkmanager "build-tools;37.0.0" "platform-tools" "platforms;android-33"
+          echo "Aidl: $(which aidl)"
           
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
+          export APP_ANDROID_ACCEPT_SDK_LICENSE=1
           yes | buildozer -v android debug
           
       - name: Upload APK
