@@ -3,7 +3,8 @@ on: [push, workflow_dispatch]
 
 jobs:
   build-android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    
     steps:
       - uses: actions/checkout@v4
       
@@ -12,7 +13,7 @@ jobs:
         with:
           python-version: '3.10'
           
-      # Si usas la clave falsa y los secretos, mantén estas dos líneas:
+      # Si usas el secreto, mantén esta inyección. Si no, puedes borrar este paso.
       - name: Inyectar Clave API de Resend
         run: |
           sed -i 's/CLAVE_FALSA_AQUI/${{ secrets.RESEND_API_KEY }}/g' main.py
