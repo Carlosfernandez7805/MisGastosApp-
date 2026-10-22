@@ -3,52 +3,23 @@ on: [push, workflow_dispatch]
 
 jobs:
   build-android:
-    runs-on: ubuntu-22.04
-    
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          
       - name: Inyectar Clave API de Resend
         run: |
           sed -i 's/CLAVE_FALSA_AQUI/${{ secrets.RESEND_API_KEY }}/g' main.py
           
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
-          # Forzar una versión estable de pip y herramientas base
-          pip3 install --user --upgrade "pip<24.0" "setuptools<70" wheel
-          # Instalar buildozer y la versión de python-for-android que soluciona el conflicto
-          pip3 install --user --upgrade buildozer cython virtualenv
-          pip3 install --user --upgrade python-for-android
-          
-      - name: Aceptar Licencias y Preparar SDK
-        run: |
-          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ] && [ -d "$SDK_ROOT/cmdline-tools" ]; then
-            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort | tail -n 1)"
-          fi
-          if [ -n "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-            "$SDKMANAGER" "build-tools;37.0.0" "platform-tools" "platforms;android-33" || true
-          else
-            echo "sdkmanager no encontrado, continuando..."
-          fi
-          
       - name: Build with Buildozer
-        run: |
-          export PATH=$PATH:~/.local/bin
-          export APP_ANDROID_ACCEPT_SDK_LICENSE=1
-          yes | buildozer -v android debug
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          workdir: .
+          buildozer_version: stable
           
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: misgastos-apk
-          path: bin/*.apk
+          path: ${{ steps.buildozer.outputs.filename }}
