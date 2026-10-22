@@ -13,7 +13,6 @@ jobs:
         with:
           python-version: '3.10'
           
-      # Si usas el secreto, mantén esta inyección. Si no, puedes borrar este paso.
       - name: Inyectar Clave API de Resend
         run: |
           sed -i 's/CLAVE_FALSA_AQUI/${{ secrets.RESEND_API_KEY }}/g' main.py
@@ -24,10 +23,15 @@ jobs:
           sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
           pip3 install --user --upgrade buildozer cython virtualenv
           
+      # Aceptar licencias de Android SDK de forma explícita
+      - name: Aceptar Licencias de Android
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
+          
       - name: Build with Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
-          buildozer -v android debug
+          yes | buildozer -v android debug
           
       - name: Upload APK
         uses: actions/upload-artifact@v4
