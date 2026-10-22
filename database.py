@@ -41,7 +41,7 @@ def init_db(db_path):
             )
         ''')
 
-        # Tabla de Deudas con estado (pending/paid)
+        # Tabla de Deudas
         conn.execute('''
             CREATE TABLE IF NOT EXISTS debts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,6 +52,12 @@ def init_db(db_path):
                 status TEXT DEFAULT 'pending'
             )
         ''')
+        
+        # MIGRACIÓN: Revisar si la columna 'status' existe en la tabla 'debts'
+        cur_debts = conn.execute("PRAGMA table_info(debts)")
+        cols_debts = [row[1] for row in cur_debts.fetchall()]
+        if 'status' not in cols_debts:
+            conn.execute("ALTER TABLE debts ADD COLUMN status TEXT DEFAULT 'pending'")
 
         # Tabla de Ingresos Extra
         conn.execute('''
