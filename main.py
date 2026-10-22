@@ -404,11 +404,11 @@ BoxLayout:
             size_hint_y: None
             height: self.minimum_height
             
-    # BOTONES INFERIORES
+    # BOTONES INFERIORES (3 Columnas en lugar de 4, sin WhatsApp)
     GridLayout:
-        cols: 2
+        cols: 3
         size_hint_y: None
-        height: dp(90)
+        height: dp(45)
         spacing: dp(5)
         
         Button:
@@ -431,13 +431,6 @@ BoxLayout:
             background_normal: ''
             background_color: (0.3, 0.35, 0.45, 1)
             on_release: app.generar_respaldo()
-            
-        Button:
-            text: '[font=FontAwesome]\\uf232[/font] WHATSAPP'
-            markup: True
-            background_normal: ''
-            background_color: (0.1, 0.7, 0.3, 1)
-            on_release: app.compartir_por_whatsapp()
 '''
 
 class PieChart(Widget):
@@ -713,10 +706,8 @@ class GastosApp(App):
         btn_guardar.bind(on_release=guardar)
         popup.open()
 
-    # --- CALENDARIO VISUAL (SPINNERS) ---
     def abrir_filtro_fechas(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
-        
         row_inicio = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
         d1 = Spinner(text='1', values=[str(i) for i in range(1, 32)], size_hint_x=0.3)
         m1 = Spinner(text='1', values=[str(i) for i in range(1, 13)], size_hint_x=0.3)
@@ -897,10 +888,8 @@ class GastosApp(App):
         btn_guardar.bind(on_release=guardar)
         popup.open()
 
-    # --- PRESUPUESTOS ---
     def abrir_presupuestos(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
-        
         scroll = ScrollView(size_hint_y=0.6)
         lista = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(5))
         lista.bind(minimum_height=lista.setter('height'))
@@ -913,8 +902,7 @@ class GastosApp(App):
                 gastado = get_total_category_expense(self.db_path, mes_actual, cat)
                 texto = f"{cat}: Límite {self.formato(monto_limite)} | Gastado {self.formato(gastado)}"
                 color = (0.9, 0.3, 0.3, 1) if gastado > monto_limite else (0.2, 0.9, 0.5, 1)
-                lbl = Label(text=texto, halign='left', valign='middle', size_hint_y=None, height=dp(30), color=color)
-                lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+                lbl = Label(text=texto, halign='left', valign='middle', size_hint_y=None, height=dp(30), color=color, text_size=(dp(250), None))
                 lista.add_widget(lbl)
                 
         recargar_lista()
@@ -937,10 +925,8 @@ class GastosApp(App):
         
         Popup(title='Presupuestos por Categoría', content=contenido, size_hint=(0.95, 0.8)).open()
 
-    # --- INGRESOS ---
     def abrir_ingresos(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
-        
         scroll = ScrollView(size_hint_y=0.6)
         lista = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(5))
         lista.bind(minimum_height=lista.setter('height'))
@@ -950,8 +936,7 @@ class GastosApp(App):
             mes_actual = datetime.now().strftime('%Y-%m')
             for i_id, desc, amount, date_str in get_all_incomes_month(self.db_path, mes_actual):
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
-                lbl = Label(text=f"{desc} - {self.formato(amount)}", halign='left', valign='middle', color=(0.2, 0.9, 0.5, 1))
-                lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+                lbl = Label(text=f"{desc} - {self.formato(amount)}", halign='left', valign='middle', color=(0.2, 0.9, 0.5, 1), text_size=(dp(200), None))
                 btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
                 btn_del.bind(on_release=lambda instance, x=i_id: (delete_income(self.db_path, x), recargar_lista(), self.actualizar_pantalla()))
                 fila.add_widget(lbl); fila.add_widget(btn_del); lista.add_widget(fila)
@@ -974,7 +959,6 @@ class GastosApp(App):
         btn_add.bind(on_release=agregar)
         form.add_widget(inp_desc); form.add_widget(inp_monto); form.add_widget(btn_add)
         contenido.add_widget(form)
-        
         Popup(title='Ingresos Extra', content=contenido, size_hint=(0.95, 0.8)).open()
 
     def registrar_gasto(self):
@@ -1002,7 +986,6 @@ class GastosApp(App):
             self.root.ids.gasto.text = ''
             self.root.ids.estado.text = f'Guardados {gastos_guardados} gastos.'
             
-            # ALERTA DE PRESUPUESTO POR CATEGORIA
             limite_cat = get_category_budget(self.db_path, categoria)
             if limite_cat > 0 and moneda == 'COP':
                 mes_actual = datetime.now().strftime('%Y-%m')
@@ -1012,7 +995,6 @@ class GastosApp(App):
                 elif gastado_cat >= limite_cat * 0.9:
                     self.aviso(f"¡Cuidado con {categoria}!\n\nHas usado el 90% de tu límite.\nGastado: {self.formato(gastado_cat)}", "Cerca del Límite")
 
-            # ALERTA DE SALARIO GLOBAL
             salario = get_user_salary(self.db_path)
             if salario > 0 and total_guardado > 0:
                 now = datetime.now()
@@ -1057,7 +1039,6 @@ class GastosApp(App):
         if salario > 0 or ingresos_extra > 0:
             self.altura_salario = dp(60)
             self.opacidad_salario = 1.0
-            # RESTANTE = SALARIO + INGRESOS EXTRA - GASTOS - AHORROS
             restante = salario + ingresos_extra - total_mes_vista - total_ahorrado
             if restante < 0:
                 self.texto_saldo = f"[b]Saldo: -{self.formato(abs(restante))}[/b]\n(¡Sobregirado!)"
@@ -1149,8 +1130,7 @@ class GastosApp(App):
             lista.clear_widgets()
             for r_id, desc, amount, cat, day in get_recurring_expenses(self.db_path):
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
-                lbl = Label(text=f"Día {day}: {desc} - {self.formato(amount)}", halign='left', valign='middle')
-                lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+                lbl = Label(text=f"Día {day}: {desc} - {self.formato(amount)}", halign='left', valign='middle', text_size=(dp(250), None))
                 btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
                 btn_del.bind(on_release=lambda instance, x=r_id: (delete_recurring_expense(self.db_path, x), recargar_lista()))
                 fila.add_widget(lbl); fila.add_widget(btn_del); lista.add_widget(fila)
@@ -1181,8 +1161,7 @@ class GastosApp(App):
             for g_id, name, target, saved in get_savings_goals(self.db_path):
                 fila = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(70), spacing=dp(2))
                 porcentaje = (saved / target) * 100 if target > 0 else 0
-                lbl = Label(text=f"{name} ({porcentaje:.0f}%)\nAhorrado: {self.formato(saved)} / {self.formato(target)}", halign='left', valign='middle', size_hint_y=None, height=dp(40))
-                lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+                lbl = Label(text=f"{name} ({porcentaje:.0f}%)\nAhorrado: {self.formato(saved)} / {self.formato(target)}", halign='left', valign='middle', size_hint_y=None, height=dp(40), text_size=(dp(250), None))
                 botones = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(5))
                 inp_abono = TextInput(hint_text="Abonar $", multiline=False, input_filter='int')
                 btn_abonar = Button(text="Abonar", size_hint_x=None, width=dp(70), background_color=(0.2, 0.6, 0.6, 1))
@@ -1212,74 +1191,107 @@ class GastosApp(App):
         Popup(title='Mis Metas de Ahorro', content=contenido, size_hint=(0.95, 0.8)).open()
 
     def abrir_deudas(self):
-        contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
-        
-        lbl_me_deben = Label(text=f"[b]Me deben: {self.formato(get_total_debts(self.db_path, 'me_deben'))}[/b]", markup=True, size_hint_y=None, height=dp(25), color=(0.2, 0.9, 0.5, 1))
-        lbl_yo_debo = Label(text=f"[b]Yo debo: {self.formato(get_total_debts(self.db_path, 'yo_debo'))}[/b]", markup=True, size_hint_y=None, height=dp(25), color=(0.9, 0.3, 0.3, 1))
-        
-        contenido.add_widget(lbl_me_deben)
-        contenido.add_widget(lbl_yo_debo)
-        
-        scroll = ScrollView(size_hint_y=0.5)
-        lista = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(5))
-        lista.bind(minimum_height=lista.setter('height'))
-        
-        def recargar_lista():
-            lista.clear_widgets()
-            lbl_me_deben.text = f"[b]Me deben: {self.formato(get_total_debts(self.db_path, 'me_deben'))}[/b]"
-            lbl_yo_debo.text = f"[b]Yo debo: {self.formato(get_total_debts(self.db_path, 'yo_debo'))}[/b]"
-            for d_id, person, amount, type_d, desc in get_debts(self.db_path, "pending"):
-                color = (0.2, 0.9, 0.5, 1) if type_d == 'me_deben' else (0.9, 0.3, 0.3, 1)
-                texto = f"{'Te debe' if type_d == 'me_deben' else 'Debes a'}: {person} - {self.formato(amount)}"
-                fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
-                lbl = Label(text=texto, halign='left', valign='middle', color=color)
-                lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
-                btn_pagar = Button(text="Pagada", size_hint_x=None, width=dp(60), background_color=(0.2, 0.8, 0.5, 1))
-                btn_del = Button(text="X", size_hint_x=None, width=dp(30), background_color=(0.8, 0.2, 0.2, 1))
-                
-                btn_pagar.bind(on_release=lambda instance, x=d_id: (update_debt_status(self.db_path, x, 'paid'), recargar_lista(), self.actualizar_pantalla()))
-                btn_del.bind(on_release=lambda instance, x=d_id: (delete_debt(self.db_path, x), recargar_lista(), self.actualizar_pantalla()))
-                
-                fila.add_widget(lbl); fila.add_widget(btn_pagar); fila.add_widget(btn_del); lista.add_widget(fila)
-                
-        recargar_lista()
-        scroll.add_widget(lista); contenido.add_widget(scroll)
-        
-        form = BoxLayout(orientation='vertical', size_hint_y=0.5, spacing=dp(5))
-        inp_person = TextInput(hint_text="Nombre de la persona", multiline=False, size_hint_y=None, height=dp(35))
-        inp_monto = TextInput(hint_text="Monto", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
-        
-        botones_tipo = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
-        btn_me_deben = Button(text="Me deben", background_color=(0.2, 0.6, 0.6, 1))
-        btn_yo_debo = Button(text="Yo debo", background_color=(0.6, 0.2, 0.2, 1))
-        
-        tipo_seleccionado = ["me_deben"]
-        
-        def set_me_deben(instance):
-            tipo_seleccionado[0] = "me_deben"
-            btn_me_deben.background_color = (0.2, 0.8, 0.6, 1)
-            btn_yo_debo.background_color = (0.4, 0.4, 0.4, 1)
-        def set_yo_debo(instance):
-            tipo_seleccionado[0] = "yo_debo"
-            btn_me_deben.background_color = (0.4, 0.4, 0.4, 1)
-            btn_yo_debo.background_color = (0.8, 0.2, 0.2, 1)
+        try:
+            contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
             
-        btn_me_deben.bind(on_release=set_me_deben)
-        btn_yo_debo.bind(on_release=set_yo_debo)
-        botones_tipo.add_widget(btn_me_deben); botones_tipo.add_widget(btn_yo_debo)
-        
-        btn_add = Button(text="Registrar Deuda", size_hint_y=None, height=dp(40), background_color=(0.8, 0.5, 0.2, 1))
-        def agregar(instance):
-            if inp_person.text and inp_monto.text:
-                add_debt(self.db_path, inp_person.text, int(inp_monto.text), tipo_seleccionado[0])
-                inp_person.text = ""; inp_monto.text = ""
-                recargar_lista()
-        btn_add.bind(on_release=agregar)
-        
-        form.add_widget(inp_person); form.add_widget(inp_monto); form.add_widget(botones_tipo); form.add_widget(btn_add)
-        contenido.add_widget(form)
-        
-        Popup(title='Gestión de Deudas', content=contenido, size_hint=(0.95, 0.8)).open()
+            lbl_me_deben = Label(text="[b]Me deben: $0[/b]", markup=True, size_hint_y=None, height=dp(25), color=(0.2, 0.9, 0.5, 1))
+            lbl_yo_debo = Label(text="[b]Yo debo: $0[/b]", markup=True, size_hint_y=None, height=dp(25), color=(0.9, 0.3, 0.3, 1))
+            
+            contenido.add_widget(lbl_me_deben)
+            contenido.add_widget(lbl_yo_debo)
+            
+            scroll = ScrollView(size_hint_y=0.5)
+            lista = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(5))
+            lista.bind(minimum_height=lista.setter('height'))
+            
+            def recargar_lista():
+                lista.clear_widgets()
+                total_me_deben = get_total_debts(self.db_path, 'me_deben')
+                total_yo_debo = get_total_debts(self.db_path, 'yo_debo')
+                lbl_me_deben.text = f"[b]Me deben: {self.formato(total_me_deben)}[/b]"
+                lbl_yo_debo.text = f"[b]Yo debo: {self.formato(total_yo_debo)}[/b]"
+                
+                deudas = get_debts(self.db_path, "pending")
+                for d_id, person, amount, type_d, desc in deudas:
+                    amount = amount if amount is not None else 0
+                    person = person if person is not None else "Desconocido"
+                    
+                    color = (0.2, 0.9, 0.5, 1) if type_d == 'me_deben' else (0.9, 0.3, 0.3, 1)
+                    texto = f"{'Te debe' if type_d == 'me_deben' else 'Debes a'}: {person} - {self.formato(amount)}"
+                    
+                    fila = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
+                    lbl = Label(text=texto, color=color, text_size=(dp(180), None))
+                    
+                    btn_pagar = Button(text="Pagada", size_hint_x=None, width=dp(60), background_color=(0.2, 0.8, 0.5, 1))
+                    btn_del = Button(text="X", size_hint_x=None, width=dp(30), background_color=(0.8, 0.2, 0.2, 1))
+                    
+                    def hacer_pago(instance, x=d_id):
+                        update_debt_status(self.db_path, x, 'paid')
+                        recargar_lista()
+                        self.actualizar_pantalla()
+                        
+                    def hacer_borrado(instance, x=d_id):
+                        delete_debt(self.db_path, x)
+                        recargar_lista()
+                        self.actualizar_pantalla()
+                    
+                    btn_pagar.bind(on_release=hacer_pago)
+                    btn_del.bind(on_release=hacer_borrado)
+                    
+                    fila.add_widget(lbl)
+                    fila.add_widget(btn_pagar)
+                    fila.add_widget(btn_del)
+                    lista.add_widget(fila)
+                    
+            recargar_lista()
+            scroll.add_widget(lista)
+            contenido.add_widget(scroll)
+            
+            form = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(160), spacing=dp(5))
+            inp_person = TextInput(hint_text="Nombre de la persona", multiline=False, size_hint_y=None, height=dp(35))
+            inp_monto = TextInput(hint_text="Monto", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
+            
+            botones_tipo = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
+            btn_me_deben = Button(text="Me deben", background_color=(0.2, 0.8, 0.6, 1))
+            btn_yo_debo = Button(text="Yo debo", background_color=(0.4, 0.4, 0.4, 1))
+            
+            tipo_seleccionado = ["me_deben"]
+            
+            def set_me_deben(instance):
+                tipo_seleccionado[0] = "me_deben"
+                btn_me_deben.background_color = (0.2, 0.8, 0.6, 1)
+                btn_yo_debo.background_color = (0.4, 0.4, 0.4, 1)
+            def set_yo_debo(instance):
+                tipo_seleccionado[0] = "yo_debo"
+                btn_me_deben.background_color = (0.4, 0.4, 0.4, 1)
+                btn_yo_debo.background_color = (0.8, 0.2, 0.2, 1)
+                
+            btn_me_deben.bind(on_release=set_me_deben)
+            btn_yo_debo.bind(on_release=set_yo_debo)
+            botones_tipo.add_widget(btn_me_deben)
+            botones_tipo.add_widget(btn_yo_debo)
+            
+            btn_add = Button(text="Registrar Deuda", size_hint_y=None, height=dp(40), background_color=(0.8, 0.5, 0.2, 1))
+            def agregar(instance):
+                p = inp_person.text.strip()
+                m = inp_monto.text.strip()
+                if p and m:
+                    add_debt(self.db_path, p, int(m), tipo_seleccionado[0])
+                    inp_person.text = ""
+                    inp_monto.text = ""
+                    recargar_lista()
+            btn_add.bind(on_release=agregar)
+            
+            form.add_widget(inp_person)
+            form.add_widget(inp_monto)
+            form.add_widget(botones_tipo)
+            form.add_widget(btn_add)
+            contenido.add_widget(form)
+            
+            popup = Popup(title='Gestión de Deudas', content=contenido, size_hint=(0.95, 0.8))
+            popup.open()
+        except Exception as e:
+            self.aviso(f"Error al abrir Deudas:\n{e}", "Error Detectado")
 
     def generar_pdf(self):
         correo_del_usuario = get_user_email(self.db_path)
@@ -1351,37 +1363,6 @@ class GastosApp(App):
                 Clock.schedule_once(lambda dt: self.aviso(f"Error: {response.text}", "Error"), 0)
         except Exception as e:
             Clock.schedule_once(lambda dt: self.aviso(f"Error al enviar: {e}", "Error"), 0)
-
-    def compartir_por_whatsapp(self):
-        carpeta_descargas = '/storage/emulated/0/Download'
-        path_xlsx = os.path.join(carpeta_descargas if os.path.exists(carpeta_descargas) else self.user_data_dir, f'gastos_{date.today().isoformat()}.xlsx')
-        try:
-            export_excel(self.db_path, path_xlsx)
-            from jnius import autoclass, cast
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Intent = autoclass('android.content.Intent')
-            AndroidString = autoclass('java.lang.String')
-            Uri = autoclass('android.net.Uri')
-            File = autoclass('java.io.File')
-            StrictMode = autoclass('android.os.StrictMode')
-            try: StrictMode.disableDeathOnFileUriExposure()
-            except: pass
-            intent = Intent(Intent.ACTION_SEND)
-            intent.setType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            asunto = cast('java.lang.CharSequence', AndroidString(f"Reporte de Gastos - {date.today().isoformat()}"))
-            intent.putExtra(Intent.EXTRA_SUBJECT, asunto)
-            cuerpo = cast('java.lang.CharSequence', AndroidString("Aquí tienes mi reporte de gastos generado con la app."))
-            intent.putExtra(Intent.EXTRA_TEXT, cuerpo)
-            archivo = File(path_xlsx)
-            uri = Uri.fromFile(archivo)
-            parcelable = cast('android.os.Parcelable', uri)
-            intent.putExtra(Intent.EXTRA_STREAM, parcelable)
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            chooser_title = cast('java.lang.CharSequence', AndroidString('Compartir con:'))
-            chooser = Intent.createChooser(intent, chooser_title)
-            PythonActivity.mActivity.startActivity(chooser)
-        except Exception as e:
-            self.aviso(f"No se pudo abrir WhatsApp automáticamente.\n\nEl archivo Excel SÍ se guardó en 'Descargas'.\n\nError: {e}", "Aviso")
 
 if __name__ == '__main__':
     GastosApp().run()
