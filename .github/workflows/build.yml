@@ -8,6 +8,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      # 1. CONFIGURAR JAVA 17 EXPLÍCITAMENTE
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -28,10 +35,8 @@ jobs:
           
       - name: Aceptar Licencias y Preparar SDK
         run: |
-          # Asegurar la variable de entorno para aceptar licencias
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
           
-          # Buscar sdkmanager dinámicamente
           SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           SDKMANAGER="$(command -v sdkmanager || true)"
           if [ -z "$SDKMANAGER" ] && [ -d "$SDK_ROOT/cmdline-tools" ]; then
@@ -42,7 +47,10 @@ jobs:
             yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           fi
           
+      # 3. COMPILAR USANDO EL JAVA 17 QUE CONFIGURAMOS ARRIBA
       - name: Build with Buildozer
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
         run: |
           export PATH=$PATH:~/.local/bin
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
