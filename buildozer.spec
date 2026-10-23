@@ -6,14 +6,14 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 version = 1.0
 
-# CAMBIO CLAVE: Usamos 'fpdf' (clásico) en lugar de 'fpdf2'
-requirements = python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,requests,urllib3,fpdf,openpyxl,plyer,pyjnius,android,pillow
+# Usamos Kivy 2.2.1 y dejamos que p4a maneje Python
+requirements = python3,kivy==2.2.1,requests,urllib3,fpdf,openpyxl,plyer,pyjnius,android,pillow
 
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE
-android.api = 33
-android.minapi = 24
+android.api = 30
+android.minapi = 21
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 android.accept_sdk_license = True
