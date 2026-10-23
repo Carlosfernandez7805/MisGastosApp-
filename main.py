@@ -8,7 +8,7 @@ import random
 import traceback
 
 # =========================================================================
-# LOG DE INICIO (Escribe en Descargas para que puedas verlo si falla)
+# FUNCIÓN PARA ESCRIBIR EL LOG
 # =========================================================================
 def escribir_log(mensaje):
     try:
@@ -20,6 +20,7 @@ def escribir_log(mensaje):
 
 escribir_log("--- INICIANDO APP ---")
 
+# 1. IMPORTAR LIBRERÍAS EXTERNAS
 try:
     import requests
     escribir_log("Librería requests OK")
@@ -32,7 +33,7 @@ try:
 except Exception as e:
     escribir_log(f"Error fpdf: {e}")
 
-# CORRECCIÓN DE PERMISOS: Usar string para MANAGE_EXTERNAL_STORAGE
+# 2. PERMISOS DE ANDROID
 try:
     from android.permissions import request_permissions, Permission
     request_permissions([
@@ -41,68 +42,79 @@ try:
         Permission.READ_EXTERNAL_STORAGE, 
         "android.permission.MANAGE_EXTERNAL_STORAGE"
     ])
-    escribir_log("Permisos Android solicitados")
+    escribir_log("Permisos Android solicitados OK")
 except Exception as e:
     escribir_log(f"Error permisos Android: {e}")
 
-from kivy.app import App
-from kivy.lang import Builder
-from kivy.metrics import dp
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
-from kivy.uix.textinput import TextInput
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.button import Button
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.widget import Widget
-from kivy.uix.spinner import Spinner
-from kivy.uix.image import Image
-from kivy.properties import NumericProperty, StringProperty, ListProperty
-from kivy.resources import resource_add_path
-from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, Line, Triangle
-from kivy.core.text import LabelBase
-from kivy.core.window import Window
-from kivy.animation import Animation
+# 3. IMPORTAR KIVY (Protegido)
+try:
+    from kivy.app import App
+    from kivy.lang import Builder
+    from kivy.metrics import dp
+    from kivy.uix.label import Label
+    from kivy.uix.popup import Popup
+    from kivy.uix.textinput import TextInput
+    from kivy.uix.boxlayout import BoxLayout
+    from kivy.uix.gridlayout import GridLayout
+    from kivy.uix.button import Button
+    from kivy.uix.scrollview import ScrollView
+    from kivy.uix.widget import Widget
+    from kivy.uix.spinner import Spinner
+    from kivy.uix.image import Image
+    from kivy.properties import NumericProperty, StringProperty, ListProperty
+    from kivy.resources import resource_add_path
+    from kivy.clock import Clock
+    from kivy.graphics import Color, Rectangle, Line, Triangle
+    from kivy.core.text import LabelBase
+    from kivy.core.window import Window
+    from kivy.animation import Animation
+    escribir_log("Imports de Kivy OK")
+except Exception as e:
+    escribir_log(f"ERROR CRÍTICO EN KIVY:\n{traceback.format_exc()}")
 
 try:
     Window.softinput_mode = 'below_target'
 except:
     pass
 
-from database import (
-    init_db, add_expense, totals_for_period, delete_expense, update_expense,
-    get_available_months, get_totals_for_month, get_expenses_for_month, get_expenses_by_category_month, get_expenses_for_date_range,
-    add_recurring_expense, get_recurring_expenses, delete_recurring_expense, process_recurring_expenses,
-    add_savings_goal, get_savings_goals, add_to_savings_goal, delete_savings_goal, get_total_saved,
-    add_debt, get_debts, update_debt_status, delete_debt, get_total_debts,
-    add_income, get_income_for_month, get_all_incomes_month, delete_income,
-    save_category_budget, get_category_budget, get_all_category_budgets, get_total_category_expense,
-    save_user_email, get_user_email, save_user_salary, get_user_salary, save_user_pin, get_user_pin,
-    save_tutorial_shown, get_tutorial_shown
-)
-from excel import export_excel
+# 4. IMPORTAR BASE DE DATOS (Protegido)
+try:
+    from database import (
+        init_db, add_expense, totals_for_period, delete_expense, update_expense,
+        get_available_months, get_totals_for_month, get_expenses_for_month, get_expenses_by_category_month, get_expenses_for_date_range,
+        add_recurring_expense, get_recurring_expenses, delete_recurring_expense, process_recurring_expenses,
+        add_savings_goal, get_savings_goals, add_to_savings_goal, delete_savings_goal, get_total_saved,
+        add_debt, get_debts, update_debt_status, delete_debt, get_total_debts,
+        add_income, get_income_for_month, get_all_incomes_month, delete_income,
+        save_category_budget, get_category_budget, get_all_category_budgets, get_total_category_expense,
+        save_user_email, get_user_email, save_user_salary, get_user_salary, save_user_pin, get_user_pin,
+        save_tutorial_shown, get_tutorial_shown
+    )
+    escribir_log("Imports de database OK")
+except Exception as e:
+    escribir_log(f"ERROR CRÍTICO EN DATABASE:\n{traceback.format_exc()}")
 
-escribir_log("Imports de database y excel OK")
+# 5. IMPORTAR EXCEL (Protegido)
+try:
+    from excel import export_excel
+    escribir_log("Imports de excel OK")
+except Exception as e:
+    escribir_log(f"ERROR CRÍTICO EN EXCEL:\n{traceback.format_exc()}")
 
 ruta_de_tu_app = os.path.dirname(os.path.abspath(__file__))
 resource_add_path(ruta_de_tu_app)
 
-# =========================================================================
-# 👇 AQUÍ PONES TU API KEY Y REMITENTE 👇
-# =========================================================================
 TU_API_KEY = "re_TU_CLAVE_AQUI"
 CORREO_REMITENTE = "reportes@tusgastosapp.lat"
-# =========================================================================
 
-ruta_fuente = os.path.join(ruta_de_tu_app, "fa-solid-900.ttf")
 try:
+    ruta_fuente = os.path.join(ruta_de_tu_app, "fa-solid-900.ttf")
     LabelBase.register(name="FontAwesome", fn_regular=ruta_fuente)
     escribir_log("Fuente FontAwesome OK")
 except Exception as e:
     escribir_log(f"Error cargando fuente: {e}")
 
+# (El bloque KV se mantiene exactamente igual que en el mensaje anterior)
 KV = '''
 BoxLayout:
     orientation: 'vertical'
