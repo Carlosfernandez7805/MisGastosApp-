@@ -32,9 +32,15 @@ try:
 except Exception as e:
     escribir_log(f"Error fpdf: {e}")
 
+# CORRECCIÓN DE PERMISOS: Usar string para MANAGE_EXTERNAL_STORAGE
 try:
     from android.permissions import request_permissions, Permission
-    request_permissions([Permission.INTERNET, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE, Permission.MANAGE_EXTERNAL_STORAGE])
+    request_permissions([
+        Permission.INTERNET, 
+        Permission.WRITE_EXTERNAL_STORAGE, 
+        Permission.READ_EXTERNAL_STORAGE, 
+        "android.permission.MANAGE_EXTERNAL_STORAGE"
+    ])
     escribir_log("Permisos Android solicitados")
 except Exception as e:
     escribir_log(f"Error permisos Android: {e}")
@@ -541,8 +547,12 @@ class GastosApp(App):
             return Label(text=f"Error Crítico:\n{e}")
 
     def on_start(self):
+        # LA SOLUCIÓN: Esperar 0.5 segundos para que la pantalla cargue antes de abrir Popups
+        Clock.schedule_once(self.iniciar_app, 0.5)
+
+    def iniciar_app(self, dt):
         try:
-            escribir_log("Ejecutando on_start...")
+            escribir_log("Ejecutando iniciar_app...")
             if not self.verificar_pin(): return
             
             if not get_tutorial_shown(self.db_path):
@@ -555,10 +565,10 @@ class GastosApp(App):
                 Clock.schedule_once(lambda dt: self.aviso(f"🔔 RECORDATORIOS:\n\n{mensaje}", "Próximos cobros"), 2)
             self.actualizar_meses_spinner()
             self.actualizar_pantalla()
-            escribir_log("on_start completado con éxito.")
+            escribir_log("iniciar_app completado con éxito.")
         except Exception as e:
             error_str = traceback.format_exc()
-            escribir_log(f"ERROR EN ON_START:\n{error_str}")
+            escribir_log(f"ERROR EN iniciar_app:\n{error_str}")
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     def mostrar_bienvenida(self):
