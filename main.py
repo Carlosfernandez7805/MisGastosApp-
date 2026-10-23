@@ -46,7 +46,7 @@ try:
 except Exception as e:
     escribir_log(f"Error permisos Android: {e}")
 
-# 3. IMPORTAR KIVY (Protegido)
+# 3. IMPORTAR KIVY
 try:
     from kivy.app import App
     from kivy.lang import Builder
@@ -77,7 +77,7 @@ try:
 except:
     pass
 
-# 4. IMPORTAR BASE DE DATOS (Protegido)
+# 4. IMPORTAR BASE DE DATOS
 try:
     from database import (
         init_db, add_expense, totals_for_period, delete_expense, update_expense,
@@ -94,7 +94,8 @@ try:
 except Exception as e:
     escribir_log(f"ERROR CRÍTICO EN DATABASE:\n{traceback.format_exc()}")
 
-# 5. IMPORTAR EXCEL (Protegido)
+# 5. IMPORTAR EXCEL (Variable global por defecto)
+export_excel = None
 try:
     from excel import export_excel
     escribir_log("Imports de excel OK")
@@ -114,7 +115,6 @@ try:
 except Exception as e:
     escribir_log(f"Error cargando fuente: {e}")
 
-# (El bloque KV se mantiene exactamente igual que en el mensaje anterior)
 KV = '''
 BoxLayout:
     orientation: 'vertical'
@@ -559,7 +559,6 @@ class GastosApp(App):
             return Label(text=f"Error Crítico:\n{e}")
 
     def on_start(self):
-        # LA SOLUCIÓN: Esperar 0.5 segundos para que la pantalla cargue antes de abrir Popups
         Clock.schedule_once(self.iniciar_app, 0.5)
 
     def iniciar_app(self, dt):
@@ -1395,6 +1394,10 @@ class GastosApp(App):
                 self.aviso("Configura tu correo para enviar el Excel.", "Falta correo")
                 return
             
+            if export_excel is None:
+                self.aviso("Error interno: La librería de Excel no cargó correctamente.", "Error")
+                return
+
             path_xlsx = os.path.join(self.user_data_dir, f'gastos_{date.today().isoformat()}.xlsx')
             
             export_excel(self.db_path, path_xlsx)
