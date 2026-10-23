@@ -30,7 +30,11 @@ from kivy.core.text import LabelBase
 from kivy.core.window import Window
 from kivy.animation import Animation
 
-Window.softinput_mode = 'below_target'
+# Proteger el modo de ventana para que no falle al iniciar
+try:
+    Window.softinput_mode = 'below_target'
+except:
+    pass
 
 from database import (
     init_db, add_expense, totals_for_period, delete_expense, update_expense,
@@ -51,7 +55,7 @@ resource_add_path(ruta_de_tu_app)
 # =========================================================================
 # 👇 AQUÍ PONES TU API KEY Y REMITENTE 👇
 # =========================================================================
-TU_API_KEY = "re_TU_CLAVE_AQUI"  # <-- Pega aquí tu clave
+TU_API_KEY = "re_TU_CLAVE_AQUI"
 CORREO_REMITENTE = "reportes@tusgastosapp.lat"
 # =========================================================================
 
@@ -69,6 +73,8 @@ try:
     LabelBase.register(name="FontAwesome", fn_regular=ruta_fuente)
 except Exception as e:
     print(f"No se pudo cargar la fuente: {e}")
+
+# ... (El KV string se mantiene igual, no es necesario cambiarlo) ...
 
 KV = '''
 BoxLayout:
@@ -404,7 +410,7 @@ BoxLayout:
             size_hint_y: None
             height: self.minimum_height
             
-    # BOTONES INFERIORES (3 Columnas en lugar de 4, sin WhatsApp)
+    # BOTONES INFERIORES (3 Columnas)
     GridLayout:
         cols: 3
         size_hint_y: None
@@ -432,6 +438,8 @@ BoxLayout:
             background_color: (0.3, 0.35, 0.45, 1)
             on_release: app.generar_respaldo()
 '''
+
+# ... (PieChart y parse_expense se mantienen igual) ...
 
 class PieChart(Widget):
     def __init__(self, data, **kwargs):
@@ -508,22 +516,30 @@ class GastosApp(App):
     def build(self):
         self.title = 'Mi Control de Gastos'
         self.db_path = os.path.join(self.user_data_dir, 'gastos.db')
-        init_db(self.db_path)
+        try:
+            init_db(self.db_path)
+        except Exception as e:
+            print(f"Error crítico al iniciar DB: {e}")
         return Builder.load_string(KV)
 
     def on_start(self):
-        if not self.verificar_pin(): return
-        
-        if not get_tutorial_shown(self.db_path):
-            self.mostrar_bienvenida()
-            save_tutorial_shown(self.db_path)
+        try:
+            if not self.verificar_pin(): return
             
-        alertas = process_recurring_expenses(self.db_path)
-        if alertas:
-            mensaje = "\n".join(alertas)
-            Clock.schedule_once(lambda dt: self.aviso(f"🔔 RECORDATORIOS:\n\n{mensaje}", "Próximos cobros"), 2)
-        self.actualizar_meses_spinner()
-        self.actualizar_pantalla()
+            if not get_tutorial_shown(self.db_path):
+                self.mostrar_bienvenida()
+                save_tutorial_shown(self.db_path)
+                
+            alertas = process_recurring_expenses(self.db_path)
+            if alertas:
+                mensaje = "\n".join(alertas)
+                Clock.schedule_once(lambda dt: self.aviso(f"🔔 RECORDATORIOS:\n\n{mensaje}", "Próximos cobros"), 2)
+            self.actualizar_meses_spinner()
+            self.actualizar_pantalla()
+        except Exception as e:
+            self.aviso(f"Error al iniciar la app:\n{str(e)}", "Error Crítico")
+
+    # ... (El resto de funciones se mantienen igual. Solo asegúrate de tener la función generar_pdf protegida con try...except como ya la tenías) ...
 
     def mostrar_bienvenida(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
@@ -1294,13 +1310,15 @@ class GastosApp(App):
             self.aviso(f"Error al abrir Deudas:\n{e}", "Error Detectado")
 
     def generar_pdf(self):
-        correo_del_usuario = get_user_email(self.db_path)
-        if not correo_del_usuario:
-            self.aviso("Configura tu correo para enviar el PDF.", "Falta correo")
-            return
-        carpeta_descargas = '/storage/emulated/0/Download'
-        path_pdf = os.path.join(carpeta_descargas if os.path.exists(carpeta_descargas) else self.user_data_dir, f'reporte_{date.today().isoformat()}.pdf')
         try:
+            correo_del_usuario = get_user_email(self.db_path)
+            if not correo_del_usuario:
+                self.aviso("Configura tu correo para enviar el PDF.", "Falta correo")
+                return
+            
+            # Usar self.user_data_dir de forma directa para evitar errores de permisos en Android
+            path_pdf = os.path.join(self.user_data_dir, f'reporte_{date.today().isoformat()}.pdf')
+            
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", 'B', 16)
@@ -1331,13 +1349,15 @@ class GastosApp(App):
         threading.Thread(target=self._enviar_archivo_resend, args=(correo_del_usuario, self.db_path, "Copia de Seguridad")).start()
 
     def generar_excel(self):
-        correo_del_usuario = get_user_email(self.db_path)
-        if not correo_del_usuario:
-            self.aviso("Configura tu correo para enviar el Excel.", "Falta correo")
-            return
-        carpeta_descargas = '/storage/emulated/0/Download'
-        path_xlsx = os.path.join(carpeta_descargas if os.path.exists(carpeta_descargas) else self.user_data_dir, f'gastos_{date.today().isoformat()}.xlsx')
         try:
+            correo_del_usuario = get_user_email(self.db_path)
+            if not correo_del_usuario:
+                self.aviso("Configura tu correo para enviar el Excel.", "Falta correo")
+                return
+            
+            # Usar self.user_data_dir de forma directa
+            path_xlsx = os.path.join(self.user_data_dir, f'gastos_{date.today().isoformat()}.xlsx')
+            
             export_excel(self.db_path, path_xlsx)
             self.aviso("Generando Excel y enviando...", "Procesando")
             threading.Thread(target=self._enviar_archivo_resend, args=(correo_del_usuario, path_xlsx, "Reporte Excel")).start()
