@@ -6,16 +6,16 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 version = 1.0
 
-# Librerías que ya te funcionaron
+# Librerías necesarias
 requirements = python3,kivy==2.2.1,requests,urllib3,fpdf,et-xmlfile,openpyxl,plyer,pyjnius,android,pillow
 
 # --- IMAGEN DEL ÍCONO DE LA APP ---
-# Cambia "icon.png" por el nombre exacto de tu imagen (ej. "mi_icono.png")
-icon.filename = %(source.dir)s/icon.png
+# Apuntamos al archivo que ya subiste
+icon.filename = %(source.dir)s/mi_icono.png
 
 # --- PANTALLA DE CARGA (SPLASH) ---
-# Es la imagen que sale mientras la app abre. Puede ser la misma del ícono.
-presplash.filename = %(source.dir)s/icon.png
+# Usamos tu logo para que aparezca mientras la app abre
+presplash.filename = %(source.dir)s/logo.png
 
 orientation = portrait
 fullscreen = 0
