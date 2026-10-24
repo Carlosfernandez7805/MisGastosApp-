@@ -6,6 +6,7 @@ import base64
 import math
 import random
 import traceback
+import time # <-- NUEVO IMPORT PARA LAS PAUSAS DE REINTENTO
 
 def escribir_log(mensaje):
     try:
@@ -618,7 +619,6 @@ class GastosApp(App):
             if not resumen:
                 resumen = "El usuario no tiene gastos registrados este mes."
 
-            # 👇 AQUÍ ESTÁ LA CORRECCIÓN CON EL NUEVO MODELO 👇
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
             
             prompt = f"""Eres un asesor financiero experto y amigable. 
@@ -635,8 +635,25 @@ class GastosApp(App):
                 }]
             }
             
-            response = requests.post(url, headers=headers, json=data, timeout=30)
+            # 👇 LÓGICA DE REINTENTO PARA ERRORES 503 (SOBRECARGA DE GOOGLE) 👇
+            max_reintentos = 4
+            espera = 2
             
+            for intento in range(max_reintentos):
+                response = requests.post(url, headers=headers, json=data, timeout=30)
+                
+                if response.status_code == 200:
+                    break # Éxito, salimos del bucle
+                
+                if response.status_code == 503 and intento < max_reintentos - 1:
+                    # Servidor ocupado: Avisamos al usuario y esperamos
+                    Clock.schedule_once(lambda dt, e=espera: setattr(label_respuesta, 'text', f"Servidor ocupado. Reintentando en {e}s..."), 0)
+                    time.sleep(espera)
+                    espera *= 2  # Duplica el tiempo: 2s, luego 4s, luego 8s...
+                else:
+                    break # Es otro error o nos quedamos sin intentos
+            
+            # --- PROCESAMIENTO DE LA RESPUESTA FINAL ---
             if response.status_code == 200:
                 json_resp = response.json()
                 texto_ia = json_resp['candidates'][0]['content']['parts'][0]['text']
