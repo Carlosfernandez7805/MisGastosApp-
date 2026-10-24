@@ -564,7 +564,7 @@ class GastosApp(App):
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     # =========================================================================
-    # NUEVA FUNCIÓN: CHAT CON LA IA (GEMINI)
+    # CHAT CON LA IA (GEMINI)
     # =========================================================================
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
@@ -618,7 +618,8 @@ class GastosApp(App):
             if not resumen:
                 resumen = "El usuario no tiene gastos registrados este mes."
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
+            # 👇 AQUÍ ESTÁ LA CORRECCIÓN DEL MODELO 👇
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
             
             prompt = f"""Eres un asesor financiero experto y amigable. 
             El usuario te hace esta pregunta: "{pregunta}".
