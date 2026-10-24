@@ -8,7 +8,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      # 1. Configurar Java 17 (Requerido por Gradle)
+      # 1. Configurar Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -20,39 +20,38 @@ jobs:
         with:
           python-version: '3.10'
           
-      # 2. Inyectar la clave API desde los secretos de GitHub
-      - name: Inyectar Clave API de Resend
+      # 2. Inyectar Clave API de Resend (Correo)
+      - name: Inyectar Clave Resend
         run: |
           sed -i 's/TU_API_KEY = ".*"/TU_API_KEY = "${{ secrets.RESEND_API_KEY }}"/g' main.py
+          
+      # 3. Inyectar Clave API de Gemini (IA)
+      - name: Inyectar Clave Gemini
+        run: |
+          sed -i 's/TU_CLAVE_GEMINI_AQUI = ".*"/TU_CLAVE_GEMINI_AQUI = "${{ secrets.GEMINI_API_KEY }}"/g' main.py
           
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
-          
-          # Forzar una versión de pip estable y compatible
           pip3 install --user --upgrade "pip<24.0" "setuptools<70" wheel
           pip3 install --user --upgrade buildozer cython virtualenv
           
-      # 3. Aceptar Licencias del SDK de Android
+      # 4. Aceptar Licencias del SDK
       - name: Aceptar Licencias y Preparar SDK
         run: |
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
-          
           SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           SDKMANAGER="$(command -v sdkmanager || true)"
           if [ -z "$SDKMANAGER" ] && [ -d "$SDK_ROOT/cmdline-tools" ]; then
             SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort | tail -n 1)"
           fi
-          
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
             "$SDKMANAGER" "build-tools;37.0.0" "platform-tools" "platforms;android-33" || true
-          else
-            echo "sdkmanager no encontrado, continuando..."
           fi
           
-      # 4. Compilar usando el Java 17 configurado
+      # 5. Compilar
       - name: Build with Buildozer
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
@@ -61,7 +60,7 @@ jobs:
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
           yes | buildozer -v android debug
           
-      # 5. Subir el APK
+      # 6. Subir el APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
