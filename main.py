@@ -6,7 +6,7 @@ import base64
 import math
 import random
 import traceback
-import time # <-- IMPORT PARA LAS PAUSAS DE REINTENTO
+import time
 
 def escribir_log(mensaje):
     try:
@@ -571,6 +571,10 @@ class GastosApp(App):
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         
+        # 👇 Icono del robot seguro DENTRO de la ventana, no en el título 👇
+        lbl_titulo = Label(text="[font=FontAwesome]\\uf544[/font] Asesor Financiero IA", markup=True, size_hint_y=None, height=dp(30), color=(0.5, 0.2, 0.8, 1), font_size='18sp')
+        contenido.add_widget(lbl_titulo)
+        
         scroll = ScrollView(size_hint_y=0.7)
         lbl_respuesta = Label(text="Hola, soy tu asesor financiero. ¿En qué te puedo ayudar hoy?", 
                               halign='left', valign='top', size_hint_y=None, color=(1,1,1,1))
@@ -595,22 +599,26 @@ class GastosApp(App):
         contenido.add_widget(input_pregunta)
         contenido.add_widget(btn_enviar)
         
-        # 👇 AQUÍ APLICAMOS LA OPCIÓN 1 AL TÍTULO DEL POPUP 👇
-        popup = Popup(title='[font=FontAwesome]\\uf544[/font] Asesor Financiero IA', content=contenido, size_hint=(0.95, 0.8))
-        popup._title_label.markup = True
+        # Título del Popup normal, sin modificar propiedades privadas
+        popup = Popup(title='Asesor Financiero', content=contenido, size_hint=(0.95, 0.8))
         popup.open()
         
         def enviar(instance):
             pregunta = input_pregunta.text.strip()
             if not pregunta: return
+            
             lbl_respuesta.text = "Pensando..."
             input_pregunta.text = ""
             
-            threading.Thread(target=self.consultar_ia, args=(pregunta, lbl_respuesta)).start()
+            # Evitar que el usuario haga clic múltiples veces
+            btn_enviar.disabled = True
+            btn_enviar.text = "Consultando..."
+            
+            threading.Thread(target=self.consultar_ia, args=(pregunta, lbl_respuesta, btn_enviar)).start()
             
         btn_enviar.bind(on_release=enviar)
 
-    def consultar_ia(self, pregunta, label_respuesta):
+    def consultar_ia(self, pregunta, label_respuesta, btn_enviar):
         try:
             mes_actual = datetime.now().strftime('%Y-%m')
             gastos = get_expenses_for_month(self.db_path, mes_actual)
@@ -638,35 +646,29 @@ class GastosApp(App):
                 }]
             }
             
-            # LÓGICA DE REINTENTO PARA ERRORES 503
-            max_reintentos = 4
-            espera = 2
+            # Petición con timeout un poco más corto para evitar bloqueos
+            response = requests.post(url, headers=headers, json=data, timeout=15)
             
-            for intento in range(max_reintentos):
-                response = requests.post(url, headers=headers, json=data, timeout=30)
-                
-                if response.status_code == 200:
-                    break
-                
-                if response.status_code == 503 and intento < max_reintentos - 1:
-                    Clock.schedule_once(lambda dt, e=espera: setattr(label_respuesta, 'text', f"Servidor ocupado. Reintentando en {e}s..."), 0)
-                    time.sleep(espera)
-                    espera *= 2
-                else:
-                    break
-            
-            # PROCESAMIENTO DE LA RESPUESTA FINAL
             if response.status_code == 200:
                 json_resp = response.json()
-                texto_ia = json_resp['candidates'][0]['content']['parts'][0]['text']
-                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_ia), 0)
+                # Verificación segura de la estructura de respuesta
+                if 'candidates' in json_resp and len(json_resp['candidates']) > 0:
+                    texto_ia = json_resp['candidates'][0]['content']['parts'][0]['text']
+                    Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_ia), 0)
+                else:
+                    Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "La IA no devolvió una respuesta válida."), 0)
+            elif response.status_code == 503:
+                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "El servidor de Google está saturado. Por favor, intenta de nuevo en unos minutos."), 0)
             else:
-                error_msg = f"Error de Google (Código {response.status_code}): {response.text}"
+                error_msg = f"Error de Google (Código {response.status_code}). Revisa tu conexión."
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
                 
         except Exception as e:
             error_msg = f"Error de conexión: {str(e)}"
             Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
+        finally:
+            # Volver a habilitar el botón pase lo que pase
+            Clock.schedule_once(lambda dt: (setattr(btn_enviar, 'disabled', False), setattr(btn_enviar, 'text', "Enviar a la IA")), 0)
     # =========================================================================
 
     def mostrar_bienvenida(self):
