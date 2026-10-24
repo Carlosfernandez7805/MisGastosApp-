@@ -15,7 +15,6 @@ def export_excel(db_path, output_path):
     ws = wb.active
     ws.title = 'Gastos'
 
-    # Encabezados simples
     header = ['Fecha', 'Descripción', 'Valor (COP)', 'Categoría']
     ws.append(header)
 
@@ -25,11 +24,9 @@ def export_excel(db_path, output_path):
         ws.append([fecha, description, int(amount), category])
         total += int(amount)
 
-    # Fila de totales
     ws.append([])
     ws.append(['', 'TOTAL', total, ''])
 
-    # Ajustar ancho de columnas
     ws.column_dimensions['A'].width = 20
     ws.column_dimensions['B'].width = 40
     ws.column_dimensions['C'].width = 15
