@@ -566,12 +566,11 @@ class GastosApp(App):
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     # =========================================================================
-    # CHAT CON LA IA (GEMINI) CORREGIDO
+    # CHAT CON LA IA (GEMINI) CON SISTEMA DE RESPALDO MÚLTIPLE
     # =========================================================================
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         
-        # 👇 SOLUCIÓN AL ICONO ROTO: Usamos chr(0xf544) para forzar el carácter correcto 👇
         lbl_titulo = Label(text=f"[font=FontAwesome]{chr(0xf544)}[/font] Asesor Financiero IA", markup=True, size_hint_y=None, height=dp(40), color=(0.5, 0.2, 0.8, 1), font_size='18sp')
         contenido.add_widget(lbl_titulo)
         
@@ -609,7 +608,6 @@ class GastosApp(App):
             lbl_respuesta.text = "Pensando..."
             input_pregunta.text = ""
             
-            # Evitar que el usuario haga clic múltiples veces
             btn_enviar.disabled = True
             btn_enviar.text = "Consultando..."
             
@@ -629,8 +627,6 @@ class GastosApp(App):
             if not resumen:
                 resumen = "El usuario no tiene gastos registrados este mes."
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
-            
             prompt = f"""Eres un asesor financiero experto y amigable. 
             El usuario te hace esta pregunta: "{pregunta}".
             Aquí está el resumen de los gastos del usuario este mes:
@@ -644,31 +640,55 @@ class GastosApp(App):
                     "parts":[{"text": prompt}]
                 }]
             }
+
+            # 👇 LISTA DE MODELOS DE RESPALDO 👇
+            # Si uno falla, automáticamente intenta con el siguiente
+            modelos = [
+                "gemini-flash-latest",
+                "gemini-1.5-flash",
+                "gemini-1.5-pro",
+                "gemini-pro"
+            ]
             
-            # 👇 SOLUCIÓN AL TIMEOUT: Aumentamos el timeout a 60 segundos 👇
-            response = requests.post(url, headers=headers, json=data, timeout=60)
-            
-            if response.status_code == 200:
-                json_resp = response.json()
-                if 'candidates' in json_resp and len(json_resp['candidates']) > 0:
-                    texto_ia = json_resp['candidates'][0]['content']['parts'][0]['text']
-                    Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_ia), 0)
-                else:
-                    Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "La IA no devolvió una respuesta válida."), 0)
-            elif response.status_code == 503:
-                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "El servidor de Google está saturado. Por favor, intenta de nuevo en unos minutos."), 0)
-            else:
-                error_msg = f"Error de Google (Código {response.status_code}). Revisa tu conexión."
-                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
+            respuesta_exitosa = False
+            texto_final = ""
+
+            for modelo in modelos:
+                # Actualizamos la pantalla para que el usuario sepa qué está pasando
+                Clock.schedule_once(lambda dt, m=modelo: setattr(label_respuesta, 'text', f"Conectando con servidor ({m})..."), 0)
                 
-        except requests.exceptions.Timeout:
-            error_msg = "El servidor de IA tardó demasiado en responder. Revisa tu conexión a internet e intenta de nuevo."
-            Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
+                
+                try:
+                    # Timeout de 20 segundos por intento. Si no responde rápido, salta al otro modelo.
+                    response = requests.post(url, headers=headers, json=data, timeout=20)
+                    
+                    if response.status_code == 200:
+                        json_resp = response.json()
+                        if 'candidates' in json_resp and len(json_resp['candidates']) > 0:
+                            texto_final = json_resp['candidates'][0]['content']['parts'][0]['text']
+                            respuesta_exitosa = True
+                            break # ¡Éxito! Salimos del bucle
+                    elif response.status_code == 503:
+                        continue # Servidor ocupado, pasamos al siguiente modelo
+                    else:
+                        continue # Error 404 u otro, pasamos al siguiente modelo
+                        
+                except requests.exceptions.Timeout:
+                    continue # Se agotó el tiempo, pasamos al siguiente modelo
+                except Exception:
+                    continue # Otro error, pasamos al siguiente modelo
+
+            # --- RESULTADO FINAL ---
+            if respuesta_exitosa:
+                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
+            else:
+                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Todos los servidores de IA están saturados o tu internet está muy lento.\n\nPor favor, intenta de nuevo en unos minutos."), 0)
+                
         except Exception as e:
-            error_msg = f"Error de conexión: {str(e)}"
+            error_msg = f"Error inesperado: {str(e)}"
             Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
         finally:
-            # Volver a habilitar el botón pase lo que pase
             Clock.schedule_once(lambda dt: (setattr(btn_enviar, 'disabled', False), setattr(btn_enviar, 'text', "Enviar a la IA")), 0)
     # =========================================================================
 
