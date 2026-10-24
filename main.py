@@ -6,7 +6,7 @@ import base64
 import math
 import random
 import traceback
-import time # <-- NUEVO IMPORT PARA LAS PAUSAS DE REINTENTO
+import time # <-- IMPORT PARA LAS PAUSAS DE REINTENTO
 
 def escribir_log(mensaje):
     try:
@@ -433,7 +433,8 @@ BoxLayout:
             height: self.minimum_height
             
     Button:
-        text: '🤖 PREGUNTAR A LA IA'
+        text: '[font=FontAwesome]\\uf544[/font] PREGUNTAR A LA IA'
+        markup: True
         size_hint_y: None
         height: dp(45)
         background_normal: ''
@@ -594,7 +595,9 @@ class GastosApp(App):
         contenido.add_widget(input_pregunta)
         contenido.add_widget(btn_enviar)
         
-        popup = Popup(title='🤖 Asesor Financiero IA', content=contenido, size_hint=(0.95, 0.8))
+        # 👇 AQUÍ APLICAMOS LA OPCIÓN 1 AL TÍTULO DEL POPUP 👇
+        popup = Popup(title='[font=FontAwesome]\\uf544[/font] Asesor Financiero IA', content=contenido, size_hint=(0.95, 0.8))
+        popup._title_label.markup = True
         popup.open()
         
         def enviar(instance):
@@ -635,7 +638,7 @@ class GastosApp(App):
                 }]
             }
             
-            # 👇 LÓGICA DE REINTENTO PARA ERRORES 503 (SOBRECARGA DE GOOGLE) 👇
+            # LÓGICA DE REINTENTO PARA ERRORES 503
             max_reintentos = 4
             espera = 2
             
@@ -643,17 +646,16 @@ class GastosApp(App):
                 response = requests.post(url, headers=headers, json=data, timeout=30)
                 
                 if response.status_code == 200:
-                    break # Éxito, salimos del bucle
+                    break
                 
                 if response.status_code == 503 and intento < max_reintentos - 1:
-                    # Servidor ocupado: Avisamos al usuario y esperamos
                     Clock.schedule_once(lambda dt, e=espera: setattr(label_respuesta, 'text', f"Servidor ocupado. Reintentando en {e}s..."), 0)
                     time.sleep(espera)
-                    espera *= 2  # Duplica el tiempo: 2s, luego 4s, luego 8s...
+                    espera *= 2
                 else:
-                    break # Es otro error o nos quedamos sin intentos
+                    break
             
-            # --- PROCESAMIENTO DE LA RESPUESTA FINAL ---
+            # PROCESAMIENTO DE LA RESPUESTA FINAL
             if response.status_code == 200:
                 json_resp = response.json()
                 texto_ia = json_resp['candidates'][0]['content']['parts'][0]['text']
