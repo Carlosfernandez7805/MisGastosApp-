@@ -566,13 +566,13 @@ class GastosApp(App):
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     # =========================================================================
-    # CHAT CON LA IA (GEMINI)
+    # CHAT CON LA IA (GEMINI) CORREGIDO
     # =========================================================================
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         
-        # 👇 Icono del robot seguro DENTRO de la ventana, no en el título 👇
-        lbl_titulo = Label(text="[font=FontAwesome]\\uf544[/font] Asesor Financiero IA", markup=True, size_hint_y=None, height=dp(30), color=(0.5, 0.2, 0.8, 1), font_size='18sp')
+        # 👇 SOLUCIÓN AL ICONO ROTO: Usamos chr(0xf544) para forzar el carácter correcto 👇
+        lbl_titulo = Label(text=f"[font=FontAwesome]{chr(0xf544)}[/font] Asesor Financiero IA", markup=True, size_hint_y=None, height=dp(40), color=(0.5, 0.2, 0.8, 1), font_size='18sp')
         contenido.add_widget(lbl_titulo)
         
         scroll = ScrollView(size_hint_y=0.7)
@@ -599,7 +599,6 @@ class GastosApp(App):
         contenido.add_widget(input_pregunta)
         contenido.add_widget(btn_enviar)
         
-        # Título del Popup normal, sin modificar propiedades privadas
         popup = Popup(title='Asesor Financiero', content=contenido, size_hint=(0.95, 0.8))
         popup.open()
         
@@ -646,12 +645,11 @@ class GastosApp(App):
                 }]
             }
             
-            # Petición con timeout un poco más corto para evitar bloqueos
-            response = requests.post(url, headers=headers, json=data, timeout=15)
+            # 👇 SOLUCIÓN AL TIMEOUT: Aumentamos el timeout a 60 segundos 👇
+            response = requests.post(url, headers=headers, json=data, timeout=60)
             
             if response.status_code == 200:
                 json_resp = response.json()
-                # Verificación segura de la estructura de respuesta
                 if 'candidates' in json_resp and len(json_resp['candidates']) > 0:
                     texto_ia = json_resp['candidates'][0]['content']['parts'][0]['text']
                     Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_ia), 0)
@@ -663,6 +661,9 @@ class GastosApp(App):
                 error_msg = f"Error de Google (Código {response.status_code}). Revisa tu conexión."
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
                 
+        except requests.exceptions.Timeout:
+            error_msg = "El servidor de IA tardó demasiado en responder. Revisa tu conexión a internet e intenta de nuevo."
+            Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
         except Exception as e:
             error_msg = f"Error de conexión: {str(e)}"
             Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
