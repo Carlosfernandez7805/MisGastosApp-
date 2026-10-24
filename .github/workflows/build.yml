@@ -8,7 +8,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      # 1. CONFIGURAR JAVA 17 EXPLÍCITAMENTE
+      # 1. Configurar Java 17 (Requerido por Gradle)
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -20,9 +20,10 @@ jobs:
         with:
           python-version: '3.10'
           
+      # 2. Inyectar la clave API desde los secretos de GitHub
       - name: Inyectar Clave API de Resend
         run: |
-          sed -i 's/CLAVE_FALSA_AQUI/${{ secrets.RESEND_API_KEY }}/g' main.py
+          sed -i 's/TU_API_KEY = ".*"/TU_API_KEY = "${{ secrets.RESEND_API_KEY }}"/g' main.py
           
       - name: Install dependencies
         run: |
@@ -33,6 +34,7 @@ jobs:
           pip3 install --user --upgrade "pip<24.0" "setuptools<70" wheel
           pip3 install --user --upgrade buildozer cython virtualenv
           
+      # 3. Aceptar Licencias del SDK de Android
       - name: Aceptar Licencias y Preparar SDK
         run: |
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
@@ -45,9 +47,12 @@ jobs:
           
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" "build-tools;37.0.0" "platform-tools" "platforms;android-33" || true
+          else
+            echo "sdkmanager no encontrado, continuando..."
           fi
           
-      # 3. COMPILAR USANDO EL JAVA 17 QUE CONFIGURAMOS ARRIBA
+      # 4. Compilar usando el Java 17 configurado
       - name: Build with Buildozer
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
@@ -56,6 +61,7 @@ jobs:
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
           yes | buildozer -v android debug
           
+      # 5. Subir el APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
