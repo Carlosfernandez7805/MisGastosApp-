@@ -618,8 +618,8 @@ class GastosApp(App):
             if not resumen:
                 resumen = "El usuario no tiene gastos registrados este mes."
 
-            # 👇 AQUÍ ESTÁ LA CORRECCIÓN DEL MODELO 👇
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
+            # 👇 AQUÍ ESTÁ LA CORRECCIÓN CON EL NUEVO MODELO 👇
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
             
             prompt = f"""Eres un asesor financiero experto y amigable. 
             El usuario te hace esta pregunta: "{pregunta}".
