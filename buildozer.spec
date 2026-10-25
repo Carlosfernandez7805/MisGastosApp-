@@ -8,7 +8,6 @@ version = 1.0
 
 # Librerías necesarias
 requirements = python3,kivy==2.2.1,requests,urllib3,fpdf,et-xmlfile,openpyxl,plyer,pyjnius,android,pillow
-
 # --- IMAGEN DEL ÍCONO DE LA APP ---
 # Apuntamos al archivo que ya subiste
 icon.filename = %(source.dir)s/mi_icono.png
