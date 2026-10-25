@@ -7,7 +7,6 @@ import math
 import random
 import traceback
 import time
-import io
 
 def escribir_log(mensaje):
     try:
@@ -31,13 +30,11 @@ try:
 except Exception as e:
     escribir_log(f"Error fpdf: {e}")
 
-# 👇 IMPORTAMOS PILLOW PARA EL GRÁFICO DEL PDF 👇
 try:
     from PIL import Image, ImageDraw
     escribir_log("Librería Pillow OK")
 except Exception as e:
     escribir_log(f"Error Pillow: {e}")
-# 👆 FIN DEL IMPORT 👆
 
 try:
     from android.permissions import request_permissions, Permission
@@ -63,7 +60,7 @@ from kivy.uix.button import Button
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 from kivy.uix.spinner import Spinner
-from kivy.uix.image import Image as KivyImage # Renombrado para no chocar con Pillow
+from kivy.uix.image import Image as KivyImage
 from kivy.properties import NumericProperty, StringProperty, ListProperty
 from kivy.resources import resource_add_path
 from kivy.clock import Clock
@@ -104,8 +101,7 @@ resource_add_path(ruta_de_tu_app)
 # =========================================================================
 TU_API_KEY = "re_TU_CLAVE_AQUI" # Clave de Resend
 CORREO_REMITENTE = "reportes@tusgastosapp.lat"
-
-TU_CLAVE_GEMINI_AQUI = "TU_CLAVE_GEMINI_AQUI" # Clave de Google Gemini
+TU_CLAVE_GEMINI_AQUI = "TU_CLAVE_GEMINI_AQUI"
 # =========================================================================
 
 try:
@@ -1435,14 +1431,13 @@ class GastosApp(App):
             path_pdf = os.path.join(self.user_data_dir, f'reporte_{date.today().isoformat()}.pdf')
             path_img = os.path.join(self.user_data_dir, "grafico_temp.png")
             
-            # 👇 GENERACIÓN DEL GRÁFICO CON PILLOW 👇
+            # 1. GENERACIÓN DEL GRÁFICO CON PILLOW
             path_img_valido = False
             try:
                 mes_actual = datetime.now().strftime('%Y-%m')
                 datos = get_expenses_by_category_month(self.db_path, mes_actual)
                 
                 if datos:
-                    # Crear lienzo de 400x400 px
                     img = Image.new('RGB', (400, 400), color='white')
                     draw = ImageDraw.Draw(img)
                     
@@ -1451,11 +1446,8 @@ class GastosApp(App):
                     colores = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
                     
                     for i, d in enumerate(datos):
-                        # Calcular ángulo de la porción
                         angle = (d[1] / total) * 360
                         end_angle = start_angle + angle
-                        
-                        # Dibujar porción (posición 50,50 a 350,350)
                         draw.pieslice([50, 50, 350, 350], start=start_angle, end=end_angle, fill=colores[i % len(colores)])
                         start_angle = end_angle
                         
@@ -1464,29 +1456,117 @@ class GastosApp(App):
             except Exception as e_graf:
                 escribir_log(f"Fallo grafico PDF (Pillow): {e_graf}")
 
+            # 2. CREACIÓN DEL PDF
             pdf = FPDF()
             pdf.add_page()
-            pdf.set_font("Arial", 'B', 16)
-            pdf.cell(0, 10, "Reporte de Gastos", ln=True, align='C')
+            pdf.set_font("Arial", 'B', 18)
+            pdf.cell(0, 10, "Reporte Financiero Completo", ln=True, align='C')
             pdf.set_font("Arial", 'I', 10)
             pdf.cell(0, 10, f"Generado el: {date.today().isoformat()}", ln=True, align='C')
             pdf.ln(5)
             
+            # Insertar Gráfico
             if path_img_valido and os.path.exists(path_img):
                 pdf.image(path_img, x=60, y=35, w=90)
                 pdf.ln(90) 
                 os.remove(path_img)
             else:
-                pdf.ln(5)
+                pdf.ln(10)
 
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(40, 10, "Fecha", 1); pdf.cell(70, 10, "Descripcion", 1); pdf.cell(30, 10, "Categoria", 1); pdf.cell(30, 10, "Monto", 1); pdf.ln()
+            # --- SECCIÓN 1: GASTOS ---
+            pdf.set_font("Arial", 'B', 14)
+            pdf.set_fill_color(230, 230, 230)
+            pdf.cell(0, 10, "1. Gastos del Mes", ln=True, fill=True)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(30, 8, "Fecha", 1); pdf.cell(70, 8, "Descripcion", 1); pdf.cell(40, 8, "Categoria", 1); pdf.cell(40, 8, "Monto", 1); pdf.ln()
             pdf.set_font("Arial", '', 10)
             rows = get_expenses_for_month(self.db_path, datetime.now().strftime('%Y-%m'))
             for _, created_at, desc, amount, cat, curr in rows:
                 d_clean = desc.encode('latin-1', 'replace').decode('latin-1')
                 c_clean = cat.encode('latin-1', 'replace').decode('latin-1')
-                pdf.cell(40, 10, created_at[:10], 1); pdf.cell(70, 10, d_clean, 1); pdf.cell(30, 10, c_clean, 1); pdf.cell(30, 10, f"{self.formato(amount)} {curr}", 1); pdf.ln()
+                pdf.cell(30, 8, created_at[:10], 1); pdf.cell(70, 8, d_clean[:30], 1); pdf.cell(40, 8, c_clean, 1); pdf.cell(40, 8, f"{self.formato(amount)} {curr}", 1); pdf.ln()
+            pdf.ln(5)
+
+            # --- SECCIÓN 2: GASTOS FIJOS ---
+            if pdf.get_y() > 230: pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, "2. Gastos Fijos Programados", ln=True, fill=True)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(100, 8, "Descripcion", 1); pdf.cell(40, 8, "Monto", 1); pdf.cell(40, 8, "Dia de Cobro", 1); pdf.ln()
+            pdf.set_font("Arial", '', 10)
+            fijos = get_recurring_expenses(self.db_path)
+            if fijos:
+                for f in fijos:
+                    d_clean = f[1].encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(100, 8, d_clean[:40], 1); pdf.cell(40, 8, self.formato(f[2]), 1); pdf.cell(40, 8, f"Día {f[4]}", 1); pdf.ln()
+            else:
+                pdf.cell(0, 8, "No hay gastos fijos registrados.", ln=True)
+            pdf.ln(5)
+
+            # --- SECCIÓN 3: INGRESOS EXTRA ---
+            if pdf.get_y() > 230: pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, "3. Ingresos Extra", ln=True, fill=True)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(100, 8, "Descripcion", 1); pdf.cell(40, 8, "Monto", 1); pdf.cell(40, 8, "Fecha", 1); pdf.ln()
+            pdf.set_font("Arial", '', 10)
+            ingresos = get_all_incomes_month(self.db_path, datetime.now().strftime('%Y-%m'))
+            if ingresos:
+                for i in ingresos:
+                    d_clean = i[1].encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(100, 8, d_clean[:40], 1); pdf.cell(40, 8, self.formato(i[2]), 1); pdf.cell(40, 8, i[3][:10], 1); pdf.ln()
+            else:
+                pdf.cell(0, 8, "No hay ingresos extra este mes.", ln=True)
+            pdf.ln(5)
+
+            # --- SECCIÓN 4: PRESUPUESTOS ---
+            if pdf.get_y() > 230: pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, "4. Presupuestos", ln=True, fill=True)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(100, 8, "Categoria", 1); pdf.cell(40, 8, "Limite", 1); pdf.ln()
+            pdf.set_font("Arial", '', 10)
+            presupuestos = get_all_category_budgets(self.db_path)
+            if presupuestos:
+                for p in presupuestos:
+                    c_clean = p[0].encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(100, 8, c_clean, 1); pdf.cell(40, 8, self.formato(p[1]), 1); pdf.ln()
+            else:
+                pdf.cell(0, 8, "No hay presupuestos definidos.", ln=True)
+            pdf.ln(5)
+
+            # --- SECCIÓN 5: METAS DE AHORRO ---
+            if pdf.get_y() > 230: pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, "5. Metas de Ahorro", ln=True, fill=True)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(100, 8, "Nombre", 1); pdf.cell(40, 8, "Meta", 1); pdf.cell(40, 8, "Ahorrado", 1); pdf.ln()
+            pdf.set_font("Arial", '', 10)
+            metas = get_savings_goals(self.db_path)
+            if metas:
+                for m in metas:
+                    n_clean = m[1].encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(100, 8, n_clean[:40], 1); pdf.cell(40, 8, self.formato(m[2]), 1); pdf.cell(40, 8, self.formato(m[3]), 1); pdf.ln()
+            else:
+                pdf.cell(0, 8, "No hay metas de ahorro.", ln=True)
+            pdf.ln(5)
+
+            # --- SECCIÓN 6: DEUDAS ---
+            if pdf.get_y() > 230: pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, "6. Deudas Pendientes", ln=True, fill=True)
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(80, 8, "Persona", 1); pdf.cell(40, 8, "Monto", 1); pdf.cell(60, 8, "Tipo", 1); pdf.ln()
+            pdf.set_font("Arial", '', 10)
+            deudas = get_debts(self.db_path, "pending")
+            if deudas:
+                for d in deudas:
+                    p_clean = d[1].encode('latin-1', 'replace').decode('latin-1')
+                    t_clean = d[3].encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(80, 8, p_clean[:30], 1); pdf.cell(40, 8, self.formato(d[2]), 1); pdf.cell(60, 8, "Me deben" if t_clean == 'me_deben' else "Yo debo", 1); pdf.ln()
+            else:
+                pdf.cell(0, 8, "No hay deudas pendientes.", ln=True)
+
             pdf.output(path_pdf)
             self.aviso("Generando PDF y enviando...", "Procesando")
             threading.Thread(target=self._enviar_archivo_resend, args=(correo_del_usuario, path_pdf, "Reporte PDF")).start()
