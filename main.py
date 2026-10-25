@@ -85,7 +85,8 @@ from database import (
     add_income, get_income_for_month, get_all_incomes_month, delete_income,
     save_category_budget, get_category_budget, get_all_category_budgets, get_total_category_expense,
     save_user_email, get_user_email, save_user_salary, get_user_salary, save_user_pin, get_user_pin,
-    save_tutorial_shown, get_tutorial_shown
+    save_tutorial_shown, get_tutorial_shown,
+    get_all_categories, add_custom_category, delete_category # <-- NUEVAS FUNCIONES
 )
 
 export_excel = None
@@ -105,7 +106,7 @@ TU_API_KEY = "re_TU_CLAVE_AQUI"
 CORREO_REMITENTE = "reportes@tusgastosapp.lat"
 TU_CLAVE_GEMINI_AQUI = "TU_CLAVE_GEMINI_AQUI"
 
-# 👇 PEGA AQUÍ LA URL DE TU FIREBASE (Paso 1) 👇
+# 👇 PEGA AQUÍ LA URL DE TU FIREBASE 👇
 URL_FIREBASE = "https://mis-gastos-app-87b40-default-rtdb.firebaseio.com/" 
 # =========================================================================
 
@@ -209,23 +210,33 @@ BoxLayout:
         
         BoxLayout:
             size_hint_y: None
-            height: dp(25)
+            height: dp(30)
             spacing: dp(5)
             
+            # CATEGORÍAS DINÁMICAS
             Spinner:
                 id: categoria
                 text: 'Categoría: General'
-                values: ('General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros')
+                values: app.lista_categorias
                 background_normal: ''
                 background_color: (0.3, 0.35, 0.45, 1)
                 color: (1, 1, 1, 1)
                 on_text: self.text = 'Categoría: ' + self.text if not self.text.startswith('Categoría:') else self.text
+            
+            # BOTÓN PARA ADMINISTRAR CATEGORÍAS (NUEVO)
+            Button:
+                text: '⚙️'
+                size_hint_x: None
+                width: dp(35)
+                background_normal: ''
+                background_color: (0.4, 0.45, 0.55, 1)
+                on_release: app.abrir_gestion_categorias()
                 
             Spinner:
                 id: moneda
                 text: 'COP'
                 values: ('COP', 'USD', 'EUR')
-                size_hint_x: 0.3
+                size_hint_x: 0.25
                 background_normal: ''
                 background_color: (0.2, 0.6, 0.6, 1)
                 color: (1, 1, 1, 1)
@@ -238,7 +249,7 @@ BoxLayout:
             
             TextInput:
                 id: gasto
-                hint_text: 'Escribe o usa el micrófono...'
+                hint_text: 'Escribe... (Usa # para etiquetas)'
                 hint_text_color: (0.5, 0.5, 0.5, 1)
                 multiline: True
                 background_normal: ''
@@ -425,7 +436,7 @@ BoxLayout:
         
         TextInput:
             id: buscar_texto
-            hint_text: 'Buscar movimientos...'
+            hint_text: 'Buscar (ej: #Cumple)...'
             multiline: False
             background_normal: ''
             background_color: (1, 1, 1, 0.1)
@@ -545,6 +556,7 @@ class GastosApp(App):
     color_saldo = ListProperty([0.97, 0.98, 0.99, 1])
     altura_salario = NumericProperty(0)
     opacidad_salario = NumericProperty(0)
+    lista_categorias = ListProperty(['General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros']) # NUEVA PROPIEDAD
     _stt_clock = None
     mes_actual_seleccionado = None
     filtro_inicio = None
@@ -570,10 +582,65 @@ class GastosApp(App):
             if not get_tutorial_shown(self.db_path):
                 self.mostrar_bienvenida()
                 save_tutorial_shown(self.db_path)
+            self.actualizar_categorias() # NUEVA FUNCIÓN
             self.actualizar_meses_spinner()
             self.actualizar_pantalla()
         except Exception as e:
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
+
+    # --- GESTIÓN DE CATEGORÍAS (NUEVO) ---
+    def actualizar_categorias(self):
+        cats = get_all_categories(self.db_path)
+        self.lista_categorias = cats
+        if self.root and 'categoria' in self.root.ids:
+            self.root.ids.categoria.values = tuple(cats)
+
+    def abrir_gestion_categorias(self):
+        contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
+        
+        scroll = ScrollView(size_hint_y=0.6)
+        lista = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(5))
+        lista.bind(minimum_height=lista.setter('height'))
+        
+        def recargar_lista():
+            lista.clear_widgets()
+            for cat in get_all_categories(self.db_path):
+                fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
+                lbl = Label(text=cat, halign='left', valign='middle', text_size=(dp(200), None))
+                btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
+                
+                # Proteger las básicas
+                if cat not in ['General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros']:
+                    btn_del.bind(on_release=lambda instance, c=cat: (delete_category(self.db_path, c), recargar_lista(), self.actualizar_categorias()))
+                else:
+                    btn_del.disabled = True
+                    btn_del.opacity = 0.3
+                    
+                fila.add_widget(lbl); fila.add_widget(btn_del); lista.add_widget(fila)
+                
+        recargar_lista()
+        scroll.add_widget(lista); contenido.add_widget(scroll)
+        
+        form = BoxLayout(orientation='vertical', size_hint_y=0.4, spacing=dp(5))
+        inp_nueva_cat = TextInput(hint_text="Nueva Categoría (Ej: Mascotas)", multiline=False, size_hint_y=None, height=dp(40))
+        btn_add = Button(text="Agregar Categoría", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        
+        def agregar(instance):
+            nueva = inp_nueva_cat.text.strip().capitalize()
+            if nueva:
+                if add_custom_category(self.db_path, nueva):
+                    inp_nueva_cat.text = ""
+                    recargar_lista()
+                    self.actualizar_categorias()
+                else:
+                    self.aviso("Esa categoría ya existe.", "Error")
+                    
+        btn_add.bind(on_release=agregar)
+        form.add_widget(inp_nueva_cat); form.add_widget(btn_add)
+        contenido.add_widget(form)
+        
+        Popup(title='Gestionar Categorías', content=contenido, size_hint=(0.95, 0.8)).open()
+    # ------------------------------------
 
     # =========================================================================
     # ☁️ SISTEMA DE SINCRONIZACIÓN EN LA NUBE
@@ -615,13 +682,13 @@ class GastosApp(App):
                     db_b64 = res.json()["db"]
                     db_bytes = base64.b64decode(db_b64)
                     
-                    # Hacemos un respaldo local por seguridad antes de sobrescribir
                     if os.path.exists(self.db_path):
                         os.rename(self.db_path, self.db_path + ".bak")
                         
                     with open(self.db_path, "wb") as f:
                         f.write(db_bytes)
                     
+                    Clock.schedule_once(lambda dt: self.actualizar_categorias(), 0)
                     Clock.schedule_once(lambda dt: self.actualizar_meses_spinner(), 0)
                     Clock.schedule_once(lambda dt: self.actualizar_pantalla(), 0)
                     
@@ -688,8 +755,9 @@ class GastosApp(App):
             gastos = get_expenses_for_month(self.db_path, mes_actual)
             
             resumen = ""
-            for _, _, desc, amount, cat, _ in gastos:
-                resumen += f"- {desc} ({cat}): ${amount}\n"
+            for _, _, desc, amount, cat, _, tags in gastos:
+                etiqueta = f" #{tags}" if tags else ""
+                resumen += f"- {desc}{etiqueta} ({cat}): ${amount}\n"
                 
             if not resumen:
                 resumen = "El usuario no tiene gastos registrados este mes."
@@ -909,7 +977,6 @@ class GastosApp(App):
                 self.aviso("¡Correo guardado!\nSincronizando datos...", "Éxito")
                 popup.dismiss()
                 
-                # Preguntar si desea descargar los datos de este correo
                 def callback_descarga(exito, msj):
                     if exito:
                         self.aviso(msj, "Sincronización Exitosa")
@@ -1115,7 +1182,7 @@ class GastosApp(App):
                 self.aviso(f"Salario guardado: {self.formato(float(texto_salario))}", "Éxito")
             popup.dismiss()
             self.actualizar_pantalla()
-            self.subir_a_la_nube() # <-- SINCRONIZAR
+            self.subir_a_la_nube()
         btn_guardar.bind(on_release=guardar)
         popup.open()
 
@@ -1131,16 +1198,22 @@ class GastosApp(App):
             mes_actual = datetime.now().strftime('%Y-%m')
             for cat, monto_limite in presupuestos:
                 gastado = get_total_category_expense(self.db_path, mes_actual, cat)
-                texto = f"{cat}: Límite {self.formato(monto_limite)} | Gastado {self.formato(gastado)}"
+                # CÁLCULO DE PORCENTAJE (NUEVO)
+                porcentaje = (gastado / monto_limite) * 100 if monto_limite > 0 else 0
+                
                 color = (0.9, 0.3, 0.3, 1) if gastado > monto_limite else (0.2, 0.9, 0.5, 1)
-                lbl = Label(text=texto, halign='left', valign='middle', size_hint_y=None, height=dp(30), color=color, text_size=(dp(250), None))
+                
+                # TEXTO CON PORCENTAJE
+                texto = f"[b]{cat}[/b]: Límite {self.formato(monto_limite)}\nGastado {self.formato(gastado)} ({porcentaje:.1f}%)"
+                
+                lbl = Label(text=texto, markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(45), color=color, text_size=(dp(300), None))
                 lista.add_widget(lbl)
                 
         recargar_lista()
         scroll.add_widget(lista); contenido.add_widget(scroll)
         
         form = BoxLayout(orientation='vertical', size_hint_y=0.4, spacing=dp(5))
-        spinner_cat = Spinner(text='General', values=('General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros'), size_hint_y=None, height=dp(35), background_normal='', background_color=(0.3, 0.35, 0.45, 1))
+        spinner_cat = Spinner(text='General', values=tuple(self.lista_categorias), size_hint_y=None, height=dp(35), background_normal='', background_color=(0.3, 0.35, 0.45, 1))
         inp_monto = TextInput(hint_text="Límite (Ej: 500000)", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
         btn_add = Button(text="Establecer Límite", size_hint_y=None, height=dp(40), background_color=(0.6, 0.2, 0.4, 1))
         
@@ -1149,7 +1222,7 @@ class GastosApp(App):
                 save_category_budget(self.db_path, spinner_cat.text, int(inp_monto.text))
                 inp_monto.text = ""
                 recargar_lista()
-                self.subir_a_la_nube() # <-- SINCRONIZAR
+                self.subir_a_la_nube()
                 
         btn_add.bind(on_release=agregar)
         form.add_widget(spinner_cat); form.add_widget(inp_monto); form.add_widget(btn_add)
@@ -1187,7 +1260,7 @@ class GastosApp(App):
                 inp_desc.text = ""; inp_monto.text = ""
                 recargar_lista()
                 self.actualizar_pantalla()
-                self.subir_a_la_nube() # <-- SINCRONIZAR
+                self.subir_a_la_nube()
                 
         btn_add.bind(on_release=agregar)
         form.add_widget(inp_desc); form.add_widget(inp_monto); form.add_widget(btn_add)
@@ -1205,10 +1278,18 @@ class GastosApp(App):
         total_guardado = 0; gastos_guardados = 0; errores = []
         for linea in lineas:
             try:
+                # EXTRACCIÓN DE ETIQUETAS #tag (NUEVO)
+                tags = ""
+                match_tag = re.search(r'#(\w+)', linea)
+                if match_tag:
+                    tags = match_tag.group(1)
+                    linea = linea.replace(match_tag.group(0), '').strip()
+                
                 result = parse_expense(linea)
                 if result:
                     description, amount = result
-                    add_expense(self.db_path, description, amount, datetime.now().isoformat(timespec='seconds'), categoria, moneda)
+                    # SE PASA EL TAG A LA BASE DE DATOS (NUEVO)
+                    add_expense(self.db_path, description, amount, datetime.now().isoformat(timespec='seconds'), categoria, moneda, tags)
                     if moneda == 'COP':
                         total_guardado += amount
                     gastos_guardados += 1
@@ -1219,7 +1300,7 @@ class GastosApp(App):
             self.root.ids.gasto.text = ''
             self.root.ids.estado.text = f'Guardados {gastos_guardados} gastos.'
             
-            self.subir_a_la_nube() # <-- SINCRONIZAR
+            self.subir_a_la_nube() 
 
             limite_cat = get_category_budget(self.db_path, categoria)
             if limite_cat > 0 and moneda == 'COP':
@@ -1294,16 +1375,22 @@ class GastosApp(App):
             grid.add_widget(Label(text='No hay gastos registrados.', size_hint_y=None, height=dp(35), color=(0.58, 0.64, 0.69, 1)))
             return
         
-        for expense_id, created_at, description, amount, category, currency in rows:
+        for row in rows:
+            # Desempaquetar de forma segura por si acaso la DB no tiene la columna tags aún
+            expense_id, created_at, description, amount, category, currency = row[:6]
+            tags = row[6] if len(row) > 6 else ""
+            
             moneda_str = f" ({currency})" if currency != 'COP' else ""
-            text = f'[{category}]  {created_at[:16].replace("T", " ")}  |  {description}  |  {self.formato(amount)}{moneda_str}'
-            btn = Button(text=text, size_hint_y=None, background_normal='', background_color=(0.12, 0.16, 0.22, 1), color=(0.88, 0.92, 0.95, 1), halign='left', valign='middle', padding=(dp(6), 0))
+            tag_str = f" [color=5b9bd5]#{tags}[/color]" if tags else ""
+            
+            text = f'[{category}] {description}{tag_str} | {self.formato(amount)}{moneda_str}'
+            btn = Button(text=text, markup=True, size_hint_y=None, background_normal='', background_color=(0.12, 0.16, 0.22, 1), color=(0.88, 0.92, 0.95, 1), halign='left', valign='middle', padding=(dp(6), 0))
             btn.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
             btn.bind(texture_size=lambda inst, val: setattr(inst, 'height', max(val[1], dp(36))))
-            btn.bind(on_release=lambda instance, x=expense_id, d=description, a=amount, c=category: self.opciones_gasto(x, d, a, c))
+            btn.bind(on_release=lambda instance, x=expense_id, d=description, a=amount, c=category, t=tags: self.opciones_gasto(x, d, a, c, t))
             grid.add_widget(btn)
 
-    def opciones_gasto(self, expense_id, desc, amount, cat):
+    def opciones_gasto(self, expense_id, desc, amount, cat, tags=""):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         contenido.add_widget(Label(text="¿Qué deseas hacer?", halign='center', size_hint_y=None, height=dp(30)))
         botones = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(10))
@@ -1314,29 +1401,44 @@ class GastosApp(App):
         contenido.add_widget(botones)
         popup = Popup(title='Opciones', content=contenido, size_hint=(0.9, 0.4))
         popup.open()
-        btn_editar.bind(on_release=lambda x: (popup.dismiss(), self.abrir_editar(expense_id, desc, amount, cat)))
+        btn_editar.bind(on_release=lambda x: (popup.dismiss(), self.abrir_editar(expense_id, desc, amount, cat, tags)))
         btn_eliminar.bind(on_release=lambda x: (popup.dismiss(), self.preguntar_eliminar(expense_id)))
         btn_cancelar.bind(on_release=popup.dismiss)
 
-    def abrir_editar(self, expense_id, desc, amount, cat):
+    def abrir_editar(self, expense_id, desc, amount, cat, tags=""):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
-        entrada_texto = TextInput(text=f"{desc} {amount}", multiline=False, size_hint_y=None, height=dp(40))
-        spinner_cat = Spinner(text=cat, values=('General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros'), size_hint_y=None, height=dp(40), background_normal='', background_color=(0.3, 0.35, 0.45, 1), color=(1, 1, 1, 1))
+        
+        # Se añade etiqueta en el texto a editar si existe
+        texto_inicial = f"{desc} {amount}"
+        if tags: texto_inicial += f" #{tags}"
+        
+        entrada_texto = TextInput(text=texto_inicial, multiline=False, size_hint_y=None, height=dp(40))
+        
+        spinner_cat = Spinner(text=cat, values=tuple(self.lista_categorias), size_hint_y=None, height=dp(40), background_normal='', background_color=(0.3, 0.35, 0.45, 1), color=(1, 1, 1, 1))
         btn_guardar = Button(text="Guardar Cambios", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        contenido.add_widget(Label(text="Editar monto y descripción:", size_hint_y=None, height=dp(20)))
+        contenido.add_widget(Label(text="Editar monto, descripción y #tag:", size_hint_y=None, height=dp(20)))
         contenido.add_widget(entrada_texto); contenido.add_widget(Label(text="Categoría:", size_hint_y=None, height=dp(20))); contenido.add_widget(spinner_cat); contenido.add_widget(btn_guardar)
         popup = Popup(title='Editar', content=contenido, size_hint=(0.9, 0.6))
         popup.open()
+        
         def guardar(instance):
             try:
-                result = parse_expense(entrada_texto.text)
+                texto_editado = entrada_texto.text.strip()
+                # Extraer tags del texto editado
+                new_tags = ""
+                match_tag = re.search(r'#(\w+)', texto_editado)
+                if match_tag:
+                    new_tags = match_tag.group(1)
+                    texto_editado = texto_editado.replace(match_tag.group(0), '').strip()
+                    
+                result = parse_expense(texto_editado)
                 if result:
                     nueva_desc, nuevo_monto = result
-                    update_expense(self.db_path, expense_id, nueva_desc, nuevo_monto, spinner_cat.text)
+                    update_expense(self.db_path, expense_id, nueva_desc, nuevo_monto, spinner_cat.text, new_tags)
                     popup.dismiss()
                     self.actualizar_pantalla()
                     self.root.ids.estado.text = "Gasto editado."
-                    self.subir_a_la_nube() # <-- SINCRONIZAR
+                    self.subir_a_la_nube() 
             except ValueError as e:
                 self.aviso(str(e), "Error")
         btn_guardar.bind(on_release=guardar)
@@ -1354,7 +1456,7 @@ class GastosApp(App):
             popup.dismiss()
             self.actualizar_pantalla()
             self.root.ids.estado.text = "Gasto eliminado."
-            self.subir_a_la_nube() # <-- SINCRONIZAR
+            self.subir_a_la_nube()
         btn_si.bind(on_release=eliminar); btn_no.bind(on_release=popup.dismiss)
         popup.open()
 
@@ -1383,7 +1485,7 @@ class GastosApp(App):
                 add_recurring_expense(self.db_path, inp_desc.text, int(inp_monto.text), "General", int(inp_dia.text))
                 inp_desc.text = ""; inp_monto.text = ""; inp_dia.text = ""
                 recargar_lista()
-                self.subir_a_la_nube() # <-- SINCRONIZAR
+                self.subir_a_la_nube()
         btn_add.bind(on_release=agregar)
         form.add_widget(inp_desc); form.add_widget(inp_monto); form.add_widget(inp_dia); form.add_widget(btn_add)
         contenido.add_widget(form)
@@ -1461,12 +1563,12 @@ class GastosApp(App):
                         update_debt_status(self.db_path, x, 'paid')
                         recargar_lista()
                         self.actualizar_pantalla()
-                        self.subir_a_la_nube() # <-- SINCRONIZAR
+                        self.subir_a_la_nube()
                     def hacer_borrado(instance, x=d_id):
                         delete_debt(self.db_path, x)
                         recargar_lista()
                         self.actualizar_pantalla()
-                        self.subir_a_la_nube() # <-- SINCRONIZAR
+                        self.subir_a_la_nube()
                     btn_pagar.bind(on_release=hacer_pago)
                     btn_del.bind(on_release=hacer_borrado)
                     fila.add_widget(lbl); fila.add_widget(btn_pagar); fila.add_widget(btn_del)
@@ -1501,7 +1603,7 @@ class GastosApp(App):
                     add_debt(self.db_path, p, int(m), tipo_seleccionado[0])
                     inp_person.text = ""; inp_monto.text = ""
                     recargar_lista()
-                    self.subir_a_la_nube() # <-- SINCRONIZAR
+                    self.subir_a_la_nube()
             btn_add.bind(on_release=agregar)
             form.add_widget(inp_person); form.add_widget(inp_monto); form.add_widget(botones_tipo); form.add_widget(btn_add)
             contenido.add_widget(form)
@@ -1564,7 +1666,8 @@ class GastosApp(App):
             pdf.cell(30, 8, "Fecha", 1); pdf.cell(70, 8, "Descripcion", 1); pdf.cell(40, 8, "Categoria", 1); pdf.cell(40, 8, "Monto", 1); pdf.ln()
             pdf.set_font("Arial", '', 10)
             rows = get_expenses_for_month(self.db_path, datetime.now().strftime('%Y-%m'))
-            for _, created_at, desc, amount, cat, curr in rows:
+            for row in rows:
+                _, created_at, desc, amount, cat, curr = row[:6]
                 d_clean = desc.encode('latin-1', 'replace').decode('latin-1')
                 c_clean = cat.encode('latin-1', 'replace').decode('latin-1')
                 pdf.cell(30, 8, created_at[:10], 1); pdf.cell(70, 8, d_clean[:30], 1); pdf.cell(40, 8, c_clean, 1); pdf.cell(40, 8, f"{self.formato(amount)} {curr}", 1); pdf.ln()
