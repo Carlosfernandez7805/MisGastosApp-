@@ -1,3 +1,4 @@
+# main.py
 from datetime import datetime, date
 import os
 import re
@@ -7,6 +8,7 @@ import math
 import random
 import traceback
 import time
+import io
 
 def escribir_log(mensaje):
     try:
@@ -29,6 +31,14 @@ try:
     escribir_log("Librería fpdf OK")
 except Exception as e:
     escribir_log(f"Error fpdf: {e}")
+
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Backend seguro para Android
+    import matplotlib.pyplot as plt
+    escribir_log("Librería matplotlib OK")
+except Exception as e:
+    escribir_log(f"Error matplotlib: {e}")
 
 try:
     from android.permissions import request_permissions, Permission
@@ -566,7 +576,7 @@ class GastosApp(App):
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     # =========================================================================
-    # CHAT CON LA IA (GEMINI) CON SISTEMA DE RESPALDO MÚLTIPLE
+    # CHAT CON LA IA (GEMINI) - LISTA COMPLETA DE MODELOS GRATUITOS
     # =========================================================================
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
@@ -641,10 +651,15 @@ class GastosApp(App):
                 }]
             }
 
-            # 👇 LISTA DE MODELOS DE RESPALDO 👇
-            # Si uno falla, automáticamente intenta con el siguiente
+            # 👇 LISTA EXTENSA DE MODELOS GRATUITOS (Ordenados por velocidad/capacidad) 👇
             modelos = [
-                "gemini-flash-latest",
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.6-flash",
+                "gemini-3.8-flash",
+                "gemini-3-flash-preview",
+                "gemini-2.5-pro",
                 "gemini-1.5-flash",
                 "gemini-1.5-pro",
                 "gemini-pro"
@@ -654,36 +669,27 @@ class GastosApp(App):
             texto_final = ""
 
             for modelo in modelos:
-                # Actualizamos la pantalla para que el usuario sepa qué está pasando
-                Clock.schedule_once(lambda dt, m=modelo: setattr(label_respuesta, 'text', f"Conectando con servidor ({m})..."), 0)
+                Clock.schedule_once(lambda dt, m=modelo: setattr(label_respuesta, 'text', f"Conectando con {m}..."), 0)
                 
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
                 
                 try:
-                    # Timeout de 20 segundos por intento. Si no responde rápido, salta al otro modelo.
-                    response = requests.post(url, headers=headers, json=data, timeout=20)
+                    # Timeout de 15 segundos por intento para no colgar la app
+                    response = requests.post(url, headers=headers, json=data, timeout=15)
                     
                     if response.status_code == 200:
                         json_resp = response.json()
                         if 'candidates' in json_resp and len(json_resp['candidates']) > 0:
                             texto_final = json_resp['candidates'][0]['content']['parts'][0]['text']
                             respuesta_exitosa = True
-                            break # ¡Éxito! Salimos del bucle
-                    elif response.status_code == 503:
-                        continue # Servidor ocupado, pasamos al siguiente modelo
-                    else:
-                        continue # Error 404 u otro, pasamos al siguiente modelo
-                        
-                except requests.exceptions.Timeout:
-                    continue # Se agotó el tiempo, pasamos al siguiente modelo
+                            break
                 except Exception:
-                    continue # Otro error, pasamos al siguiente modelo
+                    continue # Pasa al siguiente modelo
 
-            # --- RESULTADO FINAL ---
             if respuesta_exitosa:
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
             else:
-                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Todos los servidores de IA están saturados o tu internet está muy lento.\n\nPor favor, intenta de nuevo en unos minutos."), 0)
+                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Todos los modelos gratuitos están saturados.\n\nEspera 1 minuto y vuelve a intentar."), 0)
                 
         except Exception as e:
             error_msg = f"Error inesperado: {str(e)}"
@@ -1430,6 +1436,20 @@ class GastosApp(App):
                 self.aviso("Configura tu correo primero.", "Falta correo")
                 return
             path_pdf = os.path.join(self.user_data_dir, f'reporte_{date.today().isoformat()}.pdf')
+            path_img = os.path.join(self.user_data_dir, "grafico_temp.png")
+            
+            # Generar gráfico con matplotlib
+            mes_actual = datetime.now().strftime('%Y-%m')
+            datos = get_expenses_by_category_month(self.db_path, mes_actual)
+            if datos:
+                labels = [d[0] for d in datos]
+                sizes = [d[1] for d in datos]
+                fig, ax = plt.subplots(figsize=(6, 4))
+                ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+                ax.axis('equal')
+                plt.savefig(path_img, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", 'B', 16)
@@ -1437,10 +1457,17 @@ class GastosApp(App):
             pdf.set_font("Arial", 'I', 10)
             pdf.cell(0, 10, f"Generado el: {date.today().isoformat()}", ln=True, align='C')
             pdf.ln(5)
+            
+            # Insertar gráfico si se generó
+            if os.path.exists(path_img):
+                pdf.image(path_img, x=10, y=40, w=180)
+                pdf.ln(10)
+                os.remove(path_img) # Limpiar
+
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(40, 10, "Fecha", 1); pdf.cell(70, 10, "Descripcion", 1); pdf.cell(30, 10, "Categoria", 1); pdf.cell(30, 10, "Monto", 1); pdf.ln()
             pdf.set_font("Arial", '', 10)
-            rows = get_expenses_for_month(self.db_path, datetime.now().strftime('%Y-%m'))
+            rows = get_expenses_for_month(self.db_path, mes_actual)
             for _, created_at, desc, amount, cat, curr in rows:
                 d_clean = desc.encode('latin-1', 'replace').decode('latin-1')
                 c_clean = cat.encode('latin-1', 'replace').decode('latin-1')
