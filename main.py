@@ -7,6 +7,8 @@ import math
 import random
 import traceback
 import time
+import json
+import urllib.parse
 
 def escribir_log(mensaje):
     try:
@@ -97,11 +99,14 @@ ruta_de_tu_app = os.path.dirname(os.path.abspath(__file__))
 resource_add_path(ruta_de_tu_app)
 
 # =========================================================================
-# 👇 VARIABLES QUE GITHUB REEMPLAZARÁ CON TUS CLAVES REALES 👇
+# 👇 VARIABLES DE CONFIGURACIÓN 👇
 # =========================================================================
-TU_API_KEY = "re_TU_CLAVE_AQUI" # Clave de Resend
+TU_API_KEY = "re_TU_CLAVE_AQUI" 
 CORREO_REMITENTE = "reportes@tusgastosapp.lat"
 TU_CLAVE_GEMINI_AQUI = "TU_CLAVE_GEMINI_AQUI"
+
+# 👇 PEGA AQUÍ LA URL DE TU FIREBASE (Paso 1) 👇
+URL_FIREBASE = "https://mis-gastos-app-87b40-default-rtdb.firebaseio.com/" 
 # =========================================================================
 
 try:
@@ -571,8 +576,65 @@ class GastosApp(App):
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     # =========================================================================
-    # CHAT CON LA IA (GEMINI)
+    # ☁️ SISTEMA DE SINCRONIZACIÓN EN LA NUBE
     # =========================================================================
+    def subir_a_la_nube(self):
+        correo = get_user_email(self.db_path)
+        if not correo or not URL_FIREBASE.startswith("http"):
+            return
+        
+        def tarea():
+            try:
+                correo_seguro = urllib.parse.quote(correo, safe='')
+                url = f"{URL_FIREBASE}/backups/{correo_seguro}.json"
+                
+                with open(self.db_path, "rb") as f:
+                    db_b64 = base64.b64encode(f.read()).decode('utf-8')
+                
+                data = {"db": db_b64, "fecha": datetime.now().isoformat()}
+                requests.put(url, json=data, timeout=15)
+                escribir_log(f"Backup subido para {correo}")
+            except Exception as e:
+                escribir_log(f"Error subiendo backup: {e}")
+
+        threading.Thread(target=tarea).start()
+
+    def descargar_de_la_nube(self, callback=None):
+        correo = get_user_email(self.db_path)
+        if not correo or not URL_FIREBASE.startswith("http"):
+            if callback: callback(False, "Configura tu correo o la URL de Firebase.")
+            return
+
+        def tarea():
+            try:
+                correo_seguro = urllib.parse.quote(correo, safe='')
+                url = f"{URL_FIREBASE}/backups/{correo_seguro}.json"
+                
+                res = requests.get(url, timeout=15)
+                if res.status_code == 200 and res.json() and "db" in res.json():
+                    db_b64 = res.json()["db"]
+                    db_bytes = base64.b64decode(db_b64)
+                    
+                    # Hacemos un respaldo local por seguridad antes de sobrescribir
+                    if os.path.exists(self.db_path):
+                        os.rename(self.db_path, self.db_path + ".bak")
+                        
+                    with open(self.db_path, "wb") as f:
+                        f.write(db_bytes)
+                    
+                    Clock.schedule_once(lambda dt: self.actualizar_meses_spinner(), 0)
+                    Clock.schedule_once(lambda dt: self.actualizar_pantalla(), 0)
+                    
+                    if callback: Clock.schedule_once(lambda dt: callback(True, "Datos restaurados exitosamente desde tu correo."), 0)
+                else:
+                    if callback: Clock.schedule_once(lambda dt: callback(False, "No se encontraron datos en la nube para este correo."), 0)
+            except Exception as e:
+                escribir_log(f"Error bajando backup: {e}")
+                if callback: Clock.schedule_once(lambda dt: callback(False, f"Error de conexión: {e}"), 0)
+
+        threading.Thread(target=tarea).start()
+    # =========================================================================
+
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         
@@ -640,23 +702,12 @@ class GastosApp(App):
             Responde de forma concisa, práctica y motivadora en español. Máximo 3 párrafos."""
             
             headers = {'Content-Type': 'application/json'}
-            data = {
-                "contents": [{
-                    "parts":[{"text": prompt}]
-                }]
-            }
+            data = {"contents": [{"parts":[{"text": prompt}]}]}
 
             modelos = [
-                "gemini-2.5-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-3.5-flash-lite",
-                "gemini-3.6-flash",
-                "gemini-3.8-flash",
-                "gemini-3-flash-preview",
-                "gemini-2.5-pro",
-                "gemini-1.5-flash",
-                "gemini-1.5-pro",
-                "gemini-pro"
+                "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash-lite",
+                "gemini-3.6-flash", "gemini-3.8-flash", "gemini-3-flash-preview",
+                "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"
             ]
             
             respuesta_exitosa = False
@@ -664,12 +715,10 @@ class GastosApp(App):
 
             for modelo in modelos:
                 Clock.schedule_once(lambda dt, m=modelo: setattr(label_respuesta, 'text', f"Conectando con {m}..."), 0)
-                
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
                 
                 try:
                     response = requests.post(url, headers=headers, json=data, timeout=15)
-                    
                     if response.status_code == 200:
                         json_resp = response.json()
                         if 'candidates' in json_resp and len(json_resp['candidates']) > 0:
@@ -685,11 +734,9 @@ class GastosApp(App):
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Todos los modelos gratuitos están saturados.\n\nEspera 1 minuto y vuelve a intentar."), 0)
                 
         except Exception as e:
-            error_msg = f"Error inesperado: {str(e)}"
-            Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', error_msg), 0)
+            Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', f"Error inesperado: {str(e)}"), 0)
         finally:
             Clock.schedule_once(lambda dt: (setattr(btn_enviar, 'disabled', False), setattr(btn_enviar, 'text', "Enviar a la IA")), 0)
-    # =========================================================================
 
     def mostrar_bienvenida(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
@@ -844,20 +891,49 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         correo_actual = get_user_email(self.db_path) or ""
         entrada_correo = TextInput(text=correo_actual, hint_text="tucorreo@gmail.com", multiline=False, size_hint_y=None, height=dp(40))
-        btn_guardar = Button(text="Guardar Correo", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        contenido.add_widget(Label(text="Correo para reportes y PIN:", size_hint_y=None, height=dp(30)))
+        btn_guardar = Button(text="Guardar y Sincronizar", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        
+        btn_descargar = Button(text="☁️ Descargar Datos de este Correo", size_hint_y=None, height=dp(45), background_color=(0.2, 0.4, 0.8, 1))
+        
+        contenido.add_widget(Label(text="Correo para reportes y respaldo en la nube:", size_hint_y=None, height=dp(30)))
         contenido.add_widget(entrada_correo)
         contenido.add_widget(btn_guardar)
-        popup = Popup(title='Mi Correo', content=contenido, size_hint=(0.9, 0.4))
+        contenido.add_widget(btn_descargar)
+        
+        popup = Popup(title='Mi Correo', content=contenido, size_hint=(0.9, 0.45))
+        
         def guardar(instance):
             nuevo_correo = entrada_correo.text.strip()
             if "@" in nuevo_correo:
                 save_user_email(self.db_path, nuevo_correo)
-                self.aviso("¡Correo guardado!", "Éxito")
+                self.aviso("¡Correo guardado!\nSincronizando datos...", "Éxito")
                 popup.dismiss()
+                
+                # Preguntar si desea descargar los datos de este correo
+                def callback_descarga(exito, msj):
+                    if exito:
+                        self.aviso(msj, "Sincronización Exitosa")
+                
+                self.descargar_de_la_nube(callback_descarga)
             else:
                 self.aviso("Ingresa un correo válido.", "Error")
+                
+        def descargar_manual(instance):
+            if not entrada_correo.text.strip():
+                self.aviso("Primero escribe tu correo.", "Error")
+                return
+            
+            save_user_email(self.db_path, entrada_correo.text.strip())
+            popup.dismiss()
+            self.aviso("Buscando datos en la nube...", "Procesando")
+            
+            def callback_descarga(exito, msj):
+                self.aviso(msj, "Nube" if exito else "Error")
+            
+            self.descargar_de_la_nube(callback_descarga)
+            
         btn_guardar.bind(on_release=guardar)
+        btn_descargar.bind(on_release=descargar_manual)
         popup.open()
 
     def abrir_filtro_fechas(self):
@@ -1039,6 +1115,7 @@ class GastosApp(App):
                 self.aviso(f"Salario guardado: {self.formato(float(texto_salario))}", "Éxito")
             popup.dismiss()
             self.actualizar_pantalla()
+            self.subir_a_la_nube() # <-- SINCRONIZAR
         btn_guardar.bind(on_release=guardar)
         popup.open()
 
@@ -1072,6 +1149,7 @@ class GastosApp(App):
                 save_category_budget(self.db_path, spinner_cat.text, int(inp_monto.text))
                 inp_monto.text = ""
                 recargar_lista()
+                self.subir_a_la_nube() # <-- SINCRONIZAR
                 
         btn_add.bind(on_release=agregar)
         form.add_widget(spinner_cat); form.add_widget(inp_monto); form.add_widget(btn_add)
@@ -1092,7 +1170,7 @@ class GastosApp(App):
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
                 lbl = Label(text=f"{desc} - {self.formato(amount)}", halign='left', valign='middle', color=(0.2, 0.9, 0.5, 1), text_size=(dp(200), None))
                 btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
-                btn_del.bind(on_release=lambda instance, x=i_id: (delete_income(self.db_path, x), recargar_lista(), self.actualizar_pantalla()))
+                btn_del.bind(on_release=lambda instance, x=i_id: (delete_income(self.db_path, x), recargar_lista(), self.actualizar_pantalla(), self.subir_a_la_nube()))
                 fila.add_widget(lbl); fila.add_widget(btn_del); lista.add_widget(fila)
                 
         recargar_lista()
@@ -1109,6 +1187,7 @@ class GastosApp(App):
                 inp_desc.text = ""; inp_monto.text = ""
                 recargar_lista()
                 self.actualizar_pantalla()
+                self.subir_a_la_nube() # <-- SINCRONIZAR
                 
         btn_add.bind(on_release=agregar)
         form.add_widget(inp_desc); form.add_widget(inp_monto); form.add_widget(btn_add)
@@ -1140,6 +1219,8 @@ class GastosApp(App):
             self.root.ids.gasto.text = ''
             self.root.ids.estado.text = f'Guardados {gastos_guardados} gastos.'
             
+            self.subir_a_la_nube() # <-- SINCRONIZAR
+
             limite_cat = get_category_budget(self.db_path, categoria)
             if limite_cat > 0 and moneda == 'COP':
                 mes_actual = datetime.now().strftime('%Y-%m')
@@ -1255,6 +1336,7 @@ class GastosApp(App):
                     popup.dismiss()
                     self.actualizar_pantalla()
                     self.root.ids.estado.text = "Gasto editado."
+                    self.subir_a_la_nube() # <-- SINCRONIZAR
             except ValueError as e:
                 self.aviso(str(e), "Error")
         btn_guardar.bind(on_release=guardar)
@@ -1272,6 +1354,7 @@ class GastosApp(App):
             popup.dismiss()
             self.actualizar_pantalla()
             self.root.ids.estado.text = "Gasto eliminado."
+            self.subir_a_la_nube() # <-- SINCRONIZAR
         btn_si.bind(on_release=eliminar); btn_no.bind(on_release=popup.dismiss)
         popup.open()
 
@@ -1286,7 +1369,7 @@ class GastosApp(App):
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
                 lbl = Label(text=f"Día {day}: {desc} - {self.formato(amount)}", halign='left', valign='middle', text_size=(dp(250), None))
                 btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
-                btn_del.bind(on_release=lambda instance, x=r_id: (delete_recurring_expense(self.db_path, x), recargar_lista()))
+                btn_del.bind(on_release=lambda instance, x=r_id: (delete_recurring_expense(self.db_path, x), recargar_lista(), self.subir_a_la_nube()))
                 fila.add_widget(lbl); fila.add_widget(btn_del); lista.add_widget(fila)
         recargar_lista()
         scroll.add_widget(lista); contenido.add_widget(scroll)
@@ -1300,6 +1383,7 @@ class GastosApp(App):
                 add_recurring_expense(self.db_path, inp_desc.text, int(inp_monto.text), "General", int(inp_dia.text))
                 inp_desc.text = ""; inp_monto.text = ""; inp_dia.text = ""
                 recargar_lista()
+                self.subir_a_la_nube() # <-- SINCRONIZAR
         btn_add.bind(on_release=agregar)
         form.add_widget(inp_desc); form.add_widget(inp_monto); form.add_widget(inp_dia); form.add_widget(btn_add)
         contenido.add_widget(form)
@@ -1323,9 +1407,9 @@ class GastosApp(App):
                 def abonar(instance, x=g_id, inp=inp_abono):
                     if inp.text:
                         add_to_savings_goal(self.db_path, x, int(inp.text))
-                        inp.text = ""; recargar_lista(); self.actualizar_pantalla()
+                        inp.text = ""; recargar_lista(); self.actualizar_pantalla(); self.subir_a_la_nube()
                 def borrar(instance, x=g_id):
-                    delete_savings_goal(self.db_path, x); recargar_lista(); self.actualizar_pantalla()
+                    delete_savings_goal(self.db_path, x); recargar_lista(); self.actualizar_pantalla(); self.subir_a_la_nube()
                 btn_abonar.bind(on_release=abonar); btn_del.bind(on_release=borrar)
                 botones.add_widget(inp_abono); botones.add_widget(btn_abonar); botones.add_widget(btn_del)
                 fila.add_widget(lbl); fila.add_widget(botones); lista.add_widget(fila)
@@ -1338,7 +1422,7 @@ class GastosApp(App):
         def agregar(instance):
             if inp_nombre.text and inp_meta.text:
                 add_savings_goal(self.db_path, inp_nombre.text, int(inp_meta.text))
-                inp_nombre.text = ""; inp_meta.text = ""; recargar_lista()
+                inp_nombre.text = ""; inp_meta.text = ""; recargar_lista(); self.subir_a_la_nube()
         btn_add.bind(on_release=agregar)
         form.add_widget(inp_nombre); form.add_widget(inp_meta); form.add_widget(btn_add)
         contenido.add_widget(form)
@@ -1377,10 +1461,12 @@ class GastosApp(App):
                         update_debt_status(self.db_path, x, 'paid')
                         recargar_lista()
                         self.actualizar_pantalla()
+                        self.subir_a_la_nube() # <-- SINCRONIZAR
                     def hacer_borrado(instance, x=d_id):
                         delete_debt(self.db_path, x)
                         recargar_lista()
                         self.actualizar_pantalla()
+                        self.subir_a_la_nube() # <-- SINCRONIZAR
                     btn_pagar.bind(on_release=hacer_pago)
                     btn_del.bind(on_release=hacer_borrado)
                     fila.add_widget(lbl); fila.add_widget(btn_pagar); fila.add_widget(btn_del)
@@ -1415,6 +1501,7 @@ class GastosApp(App):
                     add_debt(self.db_path, p, int(m), tipo_seleccionado[0])
                     inp_person.text = ""; inp_monto.text = ""
                     recargar_lista()
+                    self.subir_a_la_nube() # <-- SINCRONIZAR
             btn_add.bind(on_release=agregar)
             form.add_widget(inp_person); form.add_widget(inp_monto); form.add_widget(botones_tipo); form.add_widget(btn_add)
             contenido.add_widget(form)
@@ -1431,7 +1518,6 @@ class GastosApp(App):
             path_pdf = os.path.join(self.user_data_dir, f'reporte_{date.today().isoformat()}.pdf')
             path_img = os.path.join(self.user_data_dir, "grafico_temp.png")
             
-            # 1. GENERACIÓN DEL GRÁFICO CON PILLOW
             path_img_valido = False
             try:
                 mes_actual = datetime.now().strftime('%Y-%m')
@@ -1456,7 +1542,6 @@ class GastosApp(App):
             except Exception as e_graf:
                 escribir_log(f"Fallo grafico PDF (Pillow): {e_graf}")
 
-            # 2. CREACIÓN DEL PDF
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", 'B', 18)
@@ -1465,7 +1550,6 @@ class GastosApp(App):
             pdf.cell(0, 10, f"Generado el: {date.today().isoformat()}", ln=True, align='C')
             pdf.ln(5)
             
-            # Insertar Gráfico
             if path_img_valido and os.path.exists(path_img):
                 pdf.image(path_img, x=60, y=35, w=90)
                 pdf.ln(90) 
@@ -1473,7 +1557,6 @@ class GastosApp(App):
             else:
                 pdf.ln(10)
 
-            # --- SECCIÓN 1: GASTOS ---
             pdf.set_font("Arial", 'B', 14)
             pdf.set_fill_color(230, 230, 230)
             pdf.cell(0, 10, "1. Gastos del Mes", ln=True, fill=True)
@@ -1487,7 +1570,6 @@ class GastosApp(App):
                 pdf.cell(30, 8, created_at[:10], 1); pdf.cell(70, 8, d_clean[:30], 1); pdf.cell(40, 8, c_clean, 1); pdf.cell(40, 8, f"{self.formato(amount)} {curr}", 1); pdf.ln()
             pdf.ln(5)
 
-            # --- SECCIÓN 2: GASTOS FIJOS ---
             if pdf.get_y() > 230: pdf.add_page()
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 10, "2. Gastos Fijos Programados", ln=True, fill=True)
@@ -1503,7 +1585,6 @@ class GastosApp(App):
                 pdf.cell(0, 8, "No hay gastos fijos registrados.", ln=True)
             pdf.ln(5)
 
-            # --- SECCIÓN 3: INGRESOS EXTRA ---
             if pdf.get_y() > 230: pdf.add_page()
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 10, "3. Ingresos Extra", ln=True, fill=True)
@@ -1519,7 +1600,6 @@ class GastosApp(App):
                 pdf.cell(0, 8, "No hay ingresos extra este mes.", ln=True)
             pdf.ln(5)
 
-            # --- SECCIÓN 4: PRESUPUESTOS ---
             if pdf.get_y() > 230: pdf.add_page()
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 10, "4. Presupuestos", ln=True, fill=True)
@@ -1535,7 +1615,6 @@ class GastosApp(App):
                 pdf.cell(0, 8, "No hay presupuestos definidos.", ln=True)
             pdf.ln(5)
 
-            # --- SECCIÓN 5: METAS DE AHORRO ---
             if pdf.get_y() > 230: pdf.add_page()
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 10, "5. Metas de Ahorro", ln=True, fill=True)
@@ -1551,7 +1630,6 @@ class GastosApp(App):
                 pdf.cell(0, 8, "No hay metas de ahorro.", ln=True)
             pdf.ln(5)
 
-            # --- SECCIÓN 6: DEUDAS ---
             if pdf.get_y() > 230: pdf.add_page()
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 10, "6. Deudas Pendientes", ln=True, fill=True)
