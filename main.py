@@ -1,4 +1,3 @@
-# main.py
 from datetime import datetime, date
 import os
 import re
@@ -32,13 +31,13 @@ try:
 except Exception as e:
     escribir_log(f"Error fpdf: {e}")
 
+# 👇 IMPORTAMOS PILLOW PARA EL GRÁFICO DEL PDF 👇
 try:
-    import matplotlib
-    matplotlib.use('Agg')  # Backend seguro para Android
-    import matplotlib.pyplot as plt
-    escribir_log("Librería matplotlib OK")
+    from PIL import Image, ImageDraw
+    escribir_log("Librería Pillow OK")
 except Exception as e:
-    escribir_log(f"Error matplotlib: {e}")
+    escribir_log(f"Error Pillow: {e}")
+# 👆 FIN DEL IMPORT 👆
 
 try:
     from android.permissions import request_permissions, Permission
@@ -64,7 +63,7 @@ from kivy.uix.button import Button
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 from kivy.uix.spinner import Spinner
-from kivy.uix.image import Image
+from kivy.uix.image import Image as KivyImage # Renombrado para no chocar con Pillow
 from kivy.properties import NumericProperty, StringProperty, ListProperty
 from kivy.resources import resource_add_path
 from kivy.clock import Clock
@@ -576,7 +575,7 @@ class GastosApp(App):
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     # =========================================================================
-    # CHAT CON LA IA (GEMINI) - LISTA COMPLETA DE MODELOS GRATUITOS
+    # CHAT CON LA IA (GEMINI)
     # =========================================================================
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
@@ -651,7 +650,6 @@ class GastosApp(App):
                 }]
             }
 
-            # 👇 LISTA EXTENSA DE MODELOS GRATUITOS (Ordenados por velocidad/capacidad) 👇
             modelos = [
                 "gemini-2.5-flash-lite",
                 "gemini-2.5-flash",
@@ -674,7 +672,6 @@ class GastosApp(App):
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
                 
                 try:
-                    # Timeout de 15 segundos por intento para no colgar la app
                     response = requests.post(url, headers=headers, json=data, timeout=15)
                     
                     if response.status_code == 200:
@@ -684,7 +681,7 @@ class GastosApp(App):
                             respuesta_exitosa = True
                             break
                 except Exception:
-                    continue # Pasa al siguiente modelo
+                    continue 
 
             if respuesta_exitosa:
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
@@ -700,7 +697,7 @@ class GastosApp(App):
 
     def mostrar_bienvenida(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
-        logo_img = Image(source='logo.png', size_hint_y=0.35, fit_mode='contain')
+        logo_img = KivyImage(source='logo.png', size_hint_y=0.35, fit_mode='contain')
         contenido.add_widget(logo_img)
         texto = """
         [b]¡Bienvenido a Gestión de Gastos![/b]
@@ -1438,17 +1435,34 @@ class GastosApp(App):
             path_pdf = os.path.join(self.user_data_dir, f'reporte_{date.today().isoformat()}.pdf')
             path_img = os.path.join(self.user_data_dir, "grafico_temp.png")
             
-            # Generar gráfico con matplotlib
-            mes_actual = datetime.now().strftime('%Y-%m')
-            datos = get_expenses_by_category_month(self.db_path, mes_actual)
-            if datos:
-                labels = [d[0] for d in datos]
-                sizes = [d[1] for d in datos]
-                fig, ax = plt.subplots(figsize=(6, 4))
-                ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
-                ax.axis('equal')
-                plt.savefig(path_img, dpi=150, bbox_inches='tight')
-                plt.close(fig)
+            # 👇 GENERACIÓN DEL GRÁFICO CON PILLOW 👇
+            path_img_valido = False
+            try:
+                mes_actual = datetime.now().strftime('%Y-%m')
+                datos = get_expenses_by_category_month(self.db_path, mes_actual)
+                
+                if datos:
+                    # Crear lienzo de 400x400 px
+                    img = Image.new('RGB', (400, 400), color='white')
+                    draw = ImageDraw.Draw(img)
+                    
+                    total = sum(d[1] for d in datos)
+                    start_angle = 0
+                    colores = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
+                    
+                    for i, d in enumerate(datos):
+                        # Calcular ángulo de la porción
+                        angle = (d[1] / total) * 360
+                        end_angle = start_angle + angle
+                        
+                        # Dibujar porción (posición 50,50 a 350,350)
+                        draw.pieslice([50, 50, 350, 350], start=start_angle, end=end_angle, fill=colores[i % len(colores)])
+                        start_angle = end_angle
+                        
+                    img.save(path_img)
+                    path_img_valido = True
+            except Exception as e_graf:
+                escribir_log(f"Fallo grafico PDF (Pillow): {e_graf}")
 
             pdf = FPDF()
             pdf.add_page()
@@ -1458,16 +1472,17 @@ class GastosApp(App):
             pdf.cell(0, 10, f"Generado el: {date.today().isoformat()}", ln=True, align='C')
             pdf.ln(5)
             
-            # Insertar gráfico si se generó
-            if os.path.exists(path_img):
-                pdf.image(path_img, x=10, y=40, w=180)
-                pdf.ln(10)
-                os.remove(path_img) # Limpiar
+            if path_img_valido and os.path.exists(path_img):
+                pdf.image(path_img, x=60, y=35, w=90)
+                pdf.ln(90) 
+                os.remove(path_img)
+            else:
+                pdf.ln(5)
 
             pdf.set_font("Arial", 'B', 12)
             pdf.cell(40, 10, "Fecha", 1); pdf.cell(70, 10, "Descripcion", 1); pdf.cell(30, 10, "Categoria", 1); pdf.cell(30, 10, "Monto", 1); pdf.ln()
             pdf.set_font("Arial", '', 10)
-            rows = get_expenses_for_month(self.db_path, mes_actual)
+            rows = get_expenses_for_month(self.db_path, datetime.now().strftime('%Y-%m'))
             for _, created_at, desc, amount, cat, curr in rows:
                 d_clean = desc.encode('latin-1', 'replace').decode('latin-1')
                 c_clean = cat.encode('latin-1', 'replace').decode('latin-1')
