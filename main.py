@@ -90,6 +90,117 @@ except Exception as e:
     print(f"Error cargando fuente de emojis: {e}")
 
 # =========================================================================
+# 👇 CLASE NATIVA PARA EL MICRÓFONO (SPEECH RECOGNIZER) 👇
+# =========================================================================
+class SpeechRecognizer:
+    def __init__(self):
+        self.available = False
+        self.recognizer = None
+        self.intent = None
+        self.callback = None
+        try:
+            from jnius import autoclass
+            from android import activity
+            
+            self.PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            self.activity = self.PythonActivity.mActivity
+            
+            self.SpeechRecognizer = autoclass('android.speech.SpeechRecognizer')
+            self.RecognizerIntent = autoclass('android.speech.RecognizerIntent')
+            self.Intent = autoclass('android.content.Intent')
+            self.Locale = autoclass('java.util.Locale')
+            
+            if self.SpeechRecognizer.isRecognitionAvailable(self.activity):
+                self.recognizer = self.SpeechRecognizer.createSpeechRecognizer(self.activity)
+                self.available = True
+        except Exception as e:
+            print(f"Error cargando SpeechRecognizer: {e}")
+            self.available = False
+
+    def start_listening(self, callback):
+        if not self.available:
+            callback(None, "El reconocimiento de voz no está disponible en este dispositivo.")
+            return
+            
+        self.callback = callback
+        try:
+            from jnius import PythonJavaClass, java_method, autoclass
+            from android import activity
+            
+            # Creamos el Intent para pedir voz
+            self.intent = self.Intent(self.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE_MODEL, self.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE, self.Locale.getDefault())
+            self.intent.putExtra(self.RecognizerIntent.EXTRA_PROMPT, "Habla ahora...")
+            
+            # Listener para los resultados
+            class RecognitionListener(PythonJavaClass):
+                __javainterfaces__ = ['android/speech/RecognitionListener']
+                __javacontext__ = 'app'
+                
+                def __init__(self, callback):
+                    super().__init__()
+                    self.callback = callback
+                
+                @java_method('(Landroid/os/Bundle;)V')
+                def onReadyForSpeech(self, params):
+                    pass
+                
+                @java_method('()V')
+                def onBeginningOfSpeech(self):
+                    pass
+                
+                @java_method('(F)V')
+                def onRmsChanged(self, rmsdB):
+                    pass
+                
+                @java_method('([B)V')
+                def onBufferReceived(self, buffer):
+                    pass
+                
+                @java_method('()V')
+                def onEndOfSpeech(self):
+                    pass
+                
+                @java_method('(I)V')
+                def onError(self, error):
+                    self.callback(None, f"Error de reconocimiento: {error}")
+                
+                @java_method('(Landroid/os/Bundle;)V')
+                def onResults(self, results):
+                    try:
+                        matches = results.getStringArrayList(self.SpeechRecognizer.RESULTS_RECOGNITION)
+                        if matches and matches.size() > 0:
+                            self.callback(matches.get(0), None)
+                        else:
+                            self.callback(None, "No se reconoció ninguna palabra.")
+                    except Exception as e:
+                        self.callback(None, str(e))
+                
+                @java_method('(Landroid/os/Bundle;)V')
+                def onPartialResults(self, partialResults):
+                    pass
+                
+                @java_method('(Landroid/os/Bundle;)V')
+                def onEvent(self, eventType, params):
+                    pass
+            
+            self.listener = RecognitionListener(callback)
+            self.recognizer.setRecognitionListener(self.listener)
+            self.recognizer.startListening(self.intent)
+            
+        except Exception as e:
+            callback(None, f"Error al iniciar: {str(e)}")
+
+    def stop_listening(self):
+        if self.recognizer:
+            try:
+                self.recognizer.stopListening()
+            except:
+                pass
+# =========================================================================
+
+# =========================================================================
 # 👇 CLASE NATIVA PARA LA HUELLA DACTILAR 👇
 # =========================================================================
 class BiometricAuth:
@@ -168,7 +279,6 @@ BoxLayout:
             valign: 'middle'
             text_size: self.size
         
-        # BOTONES CON EMOJIS UNICODE Y FUENTE NOTOEMOJI
         Button:
             text: '[font=NotoEmoji]🔒[/font]'
             markup: True
@@ -663,11 +773,13 @@ class GastosApp(App):
     filtro_fin = None
     codigo_otp = None
     otp_solicitado = False
+    is_listening = False
 
     def build(self):
         self.title = 'Mi Control de Gastos'
         self.db_path = os.path.join(self.user_data_dir, 'gastos.db')
         self.seguridad = BiometricAuth()
+        self.speech = SpeechRecognizer()
         try:
             init_db(self.db_path)
             return Builder.load_string(KV)
@@ -837,14 +949,17 @@ class GastosApp(App):
             headers = {'Content-Type': 'application/json'}
             data = {"contents": [{"parts":[{"text": prompt}]}]}
             
-            # LISTA COMPLETA DE MODELOS GEMINI GRATUITOS VIGENTES
+            # LISTA COMPLETA DE MODELOS GEMINI GRATUITOS VIGENTES (2026)
             modelos = [
-                "gemini-1.5-flash",
-                "gemini-1.5-flash-8b",
-                "gemini-1.5-pro",
-                "gemini-2.0-flash-exp",
-                "gemini-1.0-pro",
-                "gemini-pro"
+                "gemini-3.8-flash",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-pro",
+                "gemma-4-31b-it",
+                "gemma-4-26b-a4b-it"
             ]
             
             respuesta_exitosa = False
@@ -853,19 +968,22 @@ class GastosApp(App):
                 Clock.schedule_once(lambda dt, m=modelo: setattr(label_respuesta, 'text', f"Conectando con {m}..."), 0)
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
                 try:
-                    response = requests.post(url, headers=headers, json=data, timeout=15)
+                    # TIMEOUT DE 10 SEGUNDOS PARA NO ESPERAR DEMASIADO
+                    response = requests.post(url, headers=headers, json=data, timeout=10)
                     if response.status_code == 200:
                         json_resp = response.json()
                         if 'candidates' in json_resp and len(json_resp['candidates']) > 0:
                             texto_final = json_resp['candidates'][0]['content']['parts'][0]['text']
                             respuesta_exitosa = True
                             break
+                except requests.exceptions.Timeout:
+                    continue # Si se demora más de 10s, pasa al siguiente modelo
                 except Exception:
                     continue 
             if respuesta_exitosa:
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
             else:
-                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Modelos saturados o clave incorrecta. Espera 1 min."), 0)
+                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Todos los modelos están saturados o tardando. Espera 1 minuto."), 0)
         except Exception as e:
             Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', f"Error: {str(e)}"), 0)
         finally:
@@ -1128,42 +1246,26 @@ class GastosApp(App):
         anim.start(popup)
 
     def activar_microfono(self):
-        try:
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.RECORD_AUDIO])
+        if self.is_listening:
+            self.speech.stop_listening()
+            self.root.ids.estado.text = "Micrófono detenido."
+            self.is_listening = False
+            return
             
-            from plyer import stt
-            self.root.ids.estado.text = "Escuchando..."
-            stt.start()
-            if self._stt_clock: self._stt_clock.cancel()
-            self._stt_clock = Clock.schedule_interval(self._revisar_resultado_voz, 0.5)
-        except Exception as e:
-            self.aviso(f"Error de micrófono: Asegúrate de dar permisos manualmente en Ajustes de Android.", "Error de Voz")
-
-    def _revisar_resultado_voz(self, dt):
-        try:
-            from plyer import stt
-            if stt.results:
-                texto_reconocido = stt.results[0]
+        self.root.ids.estado.text = "Escuchando..."
+        self.is_listening = True
+        
+        def on_result(texto, error):
+            self.is_listening = False
+            if error:
+                self.aviso(f"Error de voz: {error}", "Micrófono")
+                self.root.ids.estado.text = "Listo."
+            else:
                 texto_actual = self.root.ids.gasto.text
-                self.root.ids.gasto.text = f"{texto_actual} {texto_reconocido}".strip()
+                self.root.ids.gasto.text = f"{texto_actual} {texto}".strip()
                 self.root.ids.estado.text = "¡Texto agregado!"
-                if self._stt_clock:
-                    self._stt_clock.cancel()
-                    self._stt_clock = None
-                stt.stop()
-                return
-            if stt.errors:
-                self.root.ids.estado.text = "No se escuchó nada."
-                if self._stt_clock:
-                    self._stt_clock.cancel()
-                    self._stt_clock = None
-                stt.stop()
-                return
-        except Exception:
-            if self._stt_clock:
-                self._stt_clock.cancel()
-                self._stt_clock = None
+        
+        self.speech.start_listening(on_result)
 
     def actualizar_meses_spinner(self):
         if not self.root or 'mes_spinner' not in self.root.ids: return
@@ -1486,7 +1588,6 @@ class GastosApp(App):
         contenido.add_widget(Label(text="¿Qué deseas hacer?", halign='center', size_hint_y=None, height=dp(30)))
         botones = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(10))
         
-        # AQUI ESTAN LOS BOTONES DE EDITAR Y ELIMINAR
         btn_editar = Button(text="[font=NotoEmoji]📝[/font] Editar", markup=True, font_size='16sp', background_color=(0.1, 0.5, 0.8, 1), color=(1,1,1,1))
         btn_eliminar = Button(text="[font=NotoEmoji]🗑️[/font] Eliminar", markup=True, font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
         btn_cancelar = Button(text="[font=NotoEmoji]❌[/font] Cancelar", markup=True, font_size='16sp', background_color=(0.3, 0.3, 0.3, 1), color=(1,1,1,1))
