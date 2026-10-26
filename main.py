@@ -836,7 +836,16 @@ class GastosApp(App):
             
             headers = {'Content-Type': 'application/json'}
             data = {"contents": [{"parts":[{"text": prompt}]}]}
-            modelos = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+            
+            # LISTA COMPLETA DE MODELOS GEMINI GRATUITOS VIGENTES
+            modelos = [
+                "gemini-1.5-flash",
+                "gemini-1.5-flash-8b",
+                "gemini-1.5-pro",
+                "gemini-2.0-flash-exp",
+                "gemini-1.0-pro",
+                "gemini-pro"
+            ]
             
             respuesta_exitosa = False
             texto_final = ""
@@ -856,7 +865,7 @@ class GastosApp(App):
             if respuesta_exitosa:
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
             else:
-                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Modelos saturados. Espera 1 min."), 0)
+                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Modelos saturados o clave incorrecta. Espera 1 min."), 0)
         except Exception as e:
             Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', f"Error: {str(e)}"), 0)
         finally:
@@ -1120,13 +1129,16 @@ class GastosApp(App):
 
     def activar_microfono(self):
         try:
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.RECORD_AUDIO])
+            
             from plyer import stt
             self.root.ids.estado.text = "Escuchando..."
             stt.start()
             if self._stt_clock: self._stt_clock.cancel()
             self._stt_clock = Clock.schedule_interval(self._revisar_resultado_voz, 0.5)
         except Exception as e:
-            self.aviso(f"Error de micrófono: Asegúrate de dar permisos de grabación.", "Error")
+            self.aviso(f"Error de micrófono: Asegúrate de dar permisos manualmente en Ajustes de Android.", "Error de Voz")
 
     def _revisar_resultado_voz(self, dt):
         try:
@@ -1473,9 +1485,12 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         contenido.add_widget(Label(text="¿Qué deseas hacer?", halign='center', size_hint_y=None, height=dp(30)))
         botones = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(10))
+        
+        # AQUI ESTAN LOS BOTONES DE EDITAR Y ELIMINAR
         btn_editar = Button(text="[font=NotoEmoji]📝[/font] Editar", markup=True, font_size='16sp', background_color=(0.1, 0.5, 0.8, 1), color=(1,1,1,1))
         btn_eliminar = Button(text="[font=NotoEmoji]🗑️[/font] Eliminar", markup=True, font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
         btn_cancelar = Button(text="[font=NotoEmoji]❌[/font] Cancelar", markup=True, font_size='16sp', background_color=(0.3, 0.3, 0.3, 1), color=(1,1,1,1))
+        
         botones.add_widget(btn_editar); botones.add_widget(btn_eliminar); botones.add_widget(btn_cancelar)
         contenido.add_widget(botones)
         popup = Popup(title='Opciones', content=contenido, size_hint=(0.9, 0.4))
