@@ -20,21 +20,10 @@ escribir_log("--- INICIANDO APP ---")
 
 try:
     import requests
-    escribir_log("Librería requests OK")
-except Exception as e:
-    escribir_log(f"Error requests: {e}")
-
-try:
     from fpdf import FPDF
-    escribir_log("Librería fpdf OK")
-except Exception as e:
-    escribir_log(f"Error fpdf: {e}")
-
-try:
     from PIL import Image, ImageDraw
-    escribir_log("Librería Pillow OK")
 except Exception as e:
-    escribir_log(f"Error Pillow: {e}")
+    escribir_log(f"Error importando librerías: {e}")
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -78,9 +67,8 @@ from database import (
 export_excel = None
 try:
     from excel import export_excel
-    escribir_log("Imports de excel OK")
 except Exception as e:
-    escribir_log(f"ERROR CRÍTICO EN EXCEL:\n{traceback.format_exc()}")
+    pass
 
 ruta_de_tu_app = os.path.dirname(os.path.abspath(__file__))
 resource_add_path(ruta_de_tu_app)
@@ -98,7 +86,35 @@ try:
     ruta_fuente = os.path.join(ruta_de_tu_app, "fa-solid-900.ttf")
     LabelBase.register(name="FontAwesome", fn_regular=ruta_fuente)
 except Exception as e:
-    escribir_log(f"Error fuente: {e}")
+    pass
+
+# =========================================================================
+# 👇 CLASE NATIVA PARA LA HUELLA DACTILAR (ANDROID) 👇
+# =========================================================================
+class BiometricAuth:
+    def __init__(self):
+        self.available = False
+        try:
+            from jnius import autoclass
+            from android import activity
+            self.Context = autoclass('android.content.Context')
+            self.BiometricManager = autoclass('android.hardware.biometrics.BiometricManager')
+            self.PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            self.activity = self.PythonActivity.mActivity
+            
+            result = self.BiometricManager.from(self.activity).canAuthenticate(
+                self.BiometricManager.BIOMETRIC_STRONG | self.BiometricManager.BIOMETRIC_WEAK
+            )
+            self.available = (result == self.BiometricManager.BIOMETRIC_SUCCESS)
+        except Exception as e:
+            print(f"Biometría no disponible: {e}")
+            self.available = False
+
+    def autenticar(self, callback):
+        # Por estabilidad en Kivy, si el sensor existe, pedimos el PIN 
+        # ya que la UI nativa de huella requiere integración Java compleja.
+        Clock.schedule_once(lambda dt: callback(False), 1) 
+# =========================================================================
 
 KV = '''
 BoxLayout:
@@ -214,6 +230,17 @@ BoxLayout:
                 background_color: (0.4, 0.45, 0.55, 1)
                 on_release: app.abrir_gestion_categorias()
                 
+            TextInput:
+                id: tag_input
+                hint_text: '# Etiqueta'
+                hint_text_color: (0.6, 0.6, 0.6, 1)
+                multiline: False
+                background_normal: ''
+                background_color: (0.2, 0.25, 0.3, 1)
+                foreground_color: (1, 1, 1, 1)
+                padding: dp(4)
+                size_hint_x: 0.35
+                
             Spinner:
                 id: moneda
                 text: 'COP'
@@ -231,7 +258,7 @@ BoxLayout:
             
             TextInput:
                 id: gasto
-                hint_text: 'Escribe... (Usa # para etiquetas)'
+                hint_text: 'Escribe el gasto aquí...'
                 hint_text_color: (0.5, 0.5, 0.5, 1)
                 multiline: True
                 background_normal: ''
@@ -372,40 +399,46 @@ BoxLayout:
     GridLayout:
         cols: 3
         size_hint_y: None
-        height: dp(70)
+        height: dp(140)
         spacing: dp(5)
         Button:
-            text: 'Fijos'
+            text: '📌 Fijos'
             font_size: '11sp'
             background_normal: ''
             background_color: (0.6, 0.4, 0.2, 1)
             on_release: app.abrir_gastos_recurrentes()
         Button:
-            text: 'Metas'
+            text: '🎯 Metas'
             font_size: '11sp'
             background_normal: ''
             background_color: (0.2, 0.6, 0.6, 1)
             on_release: app.abrir_metas_ahorro()
         Button:
-            text: 'Deudas'
+            text: '💸 Deudas'
             font_size: '11sp'
             background_normal: ''
             background_color: (0.8, 0.4, 0.1, 1)
             on_release: app.abrir_deudas()
         Button:
-            text: 'Ingresos'
+            text: '💰 Ingresos'
             font_size: '11sp'
             background_normal: ''
             background_color: (0.1, 0.5, 0.2, 1)
             on_release: app.abrir_ingresos()
         Button:
-            text: 'Presupuesto'
+            text: '📋 Presupuesto'
             font_size: '11sp'
             background_normal: ''
             background_color: (0.6, 0.2, 0.4, 1)
             on_release: app.abrir_presupuestos()
         Button:
-            text: 'Gráfico'
+            text: '📊 Comparar'
+            font_size: '11sp'
+            background_normal: ''
+            background_color: (0.9, 0.5, 0.1, 1)
+            on_release: app.mostrar_comparacion()
+        Button:
+            text: '🍕 Gráfico'
             font_size: '11sp'
             background_normal: ''
             background_color: (0.6, 0.3, 0.8, 1)
@@ -418,7 +451,7 @@ BoxLayout:
         
         TextInput:
             id: buscar_texto
-            hint_text: 'Buscar (ej: #Cumple)...'
+            hint_text: '🔍 Buscar por descripción o etiqueta...'
             multiline: False
             background_normal: ''
             background_color: (1, 1, 1, 0.1)
@@ -452,21 +485,21 @@ BoxLayout:
         spacing: dp(5)
         
         Button:
-            text: '[font=FontAwesome]\\uf0e0[/font] EXCEL'
+            text: '📗 EXCEL'
             markup: True
             background_normal: ''
             background_color: (0.1, 0.5, 0.8, 1)
             on_release: app.generar_excel()
             
         Button:
-            text: '[font=FontAwesome]\\uf1c1[/font] PDF'
+            text: '📄 PDF'
             markup: True
             background_normal: ''
             background_color: (0.8, 0.2, 0.2, 1)
             on_release: app.generar_pdf()
             
         Button:
-            text: '[font=FontAwesome]\\uf0c7[/font] BACKUP'
+            text: '☁️ BACKUP'
             markup: True
             background_normal: ''
             background_color: (0.3, 0.35, 0.45, 1)
@@ -507,6 +540,33 @@ class PieChart(Widget):
                     y2 = cy + radius * math.sin(a2)
                     Triangle(points=[cx, cy, x1, y1, x2, y2])
                 start_angle = end_angle
+
+class BarChart(Widget):
+    def __init__(self, data, **kwargs):
+        super().__init__(**kwargs)
+        self.data = data 
+        self.bind(pos=self.redraw, size=self.redraw)
+        self.redraw()
+
+    def redraw(self, *args):
+        self.canvas.clear()
+        if not self.data: return
+        max_val = max([d[1] for d in self.data]) if self.data else 1
+        if max_val == 0: max_val = 1
+        
+        width_per_bar = self.width / (len(self.data) * 1.5)
+        spacing = width_per_bar * 0.25
+        
+        with self.canvas:
+            Color(0.5, 0.5, 0.5, 1)
+            Line(points=[self.x, self.y, self.right, self.y], width=1.5)
+            
+            for i, (label, value, color) in enumerate(self.data):
+                Color(*color)
+                bar_height = (value / max_val) * (self.height * 0.8)
+                x = self.x + spacing + (i * (width_per_bar + spacing))
+                y = self.y
+                Rectangle(pos=(x, y), size=(width_per_bar, bar_height))
 
 def parse_expense(text):
     cleaned = text.strip()
@@ -550,28 +610,25 @@ class GastosApp(App):
         self.title = 'Mi Control de Gastos'
         self.db_path = os.path.join(self.user_data_dir, 'gastos.db')
         try:
-            escribir_log("Iniciando Base de Datos...")
             init_db(self.db_path)
-            escribir_log("Base de Datos OK. Cargando Interfaz...")
             return Builder.load_string(KV)
         except Exception as e:
-            escribir_log(f"ERROR EN BUILD: {e}")
             return Label(text=f"Error Crítico:\n{e}")
 
     def on_start(self):
         try:
             from android.permissions import request_permissions, Permission, check_permission
-            if not check_permission(Permission.INTERNET):
-                request_permissions([Permission.INTERNET])
-            escribir_log("Permiso de Internet solicitado OK")
+            perms = [Permission.INTERNET]
+            if not check_permission(Permission.RECORD_AUDIO):
+                perms.append(Permission.RECORD_AUDIO)
+            request_permissions(perms)
         except Exception as e:
-            escribir_log(f"Error pidiendo permisos (ignorado): {e}")
+            pass
             
         Clock.schedule_once(self.iniciar_app, 0.5)
 
     def iniciar_app(self, dt):
         try:
-            escribir_log("Iniciando APP...")
             if not self.verificar_pin(): return
             if not get_tutorial_shown(self.db_path):
                 self.mostrar_bienvenida()
@@ -579,12 +636,9 @@ class GastosApp(App):
             self.actualizar_categorias() 
             self.actualizar_meses_spinner()
             self.actualizar_pantalla()
-            escribir_log("APP iniciada correctamente")
         except Exception as e:
-            escribir_log(f"Error en iniciar_app: {e}")
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
-    # --- GESTIÓN DE CATEGORÍAS ---
     def actualizar_categorias(self):
         cats = get_all_categories(self.db_path)
         self.lista_categorias = cats
@@ -593,7 +647,6 @@ class GastosApp(App):
 
     def abrir_gestion_categorias(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
-        
         scroll = ScrollView(size_hint_y=0.6)
         lista = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(5))
         lista.bind(minimum_height=lista.setter('height'))
@@ -633,31 +686,21 @@ class GastosApp(App):
         btn_add.bind(on_release=agregar)
         form.add_widget(inp_nueva_cat); form.add_widget(btn_add)
         contenido.add_widget(form)
-        
         Popup(title='Gestionar Categorías', content=contenido, size_hint=(0.95, 0.8)).open()
 
-    # =========================================================================
-    # ☁️ SISTEMA DE SINCRONIZACIÓN EN LA NUBE
-    # =========================================================================
     def subir_a_la_nube(self):
         correo = get_user_email(self.db_path)
-        if not correo or not URL_FIREBASE.startswith("http"):
-            return
-        
+        if not correo or not URL_FIREBASE.startswith("http"): return
         def tarea():
             try:
                 correo_seguro = urllib.parse.quote(correo, safe='')
                 url = f"{URL_FIREBASE}/backups/{correo_seguro}.json"
-                
                 with open(self.db_path, "rb") as f:
                     db_b64 = base64.b64encode(f.read()).decode('utf-8')
-                
                 data = {"db": db_b64, "fecha": datetime.now().isoformat()}
                 requests.put(url, json=data, timeout=15)
-                escribir_log(f"Backup subido para {correo}")
             except Exception as e:
-                escribir_log(f"Error subiendo backup: {e}")
-
+                pass
         threading.Thread(target=tarea).start()
 
     def descargar_de_la_nube(self, callback=None):
@@ -665,61 +708,40 @@ class GastosApp(App):
         if not correo or not URL_FIREBASE.startswith("http"):
             if callback: callback(False, "Configura tu correo o la URL de Firebase.")
             return
-
         def tarea():
             try:
                 correo_seguro = urllib.parse.quote(correo, safe='')
                 url = f"{URL_FIREBASE}/backups/{correo_seguro}.json"
-                
                 res = requests.get(url, timeout=15)
                 if res.status_code == 200 and res.json() and "db" in res.json():
                     db_b64 = res.json()["db"]
                     db_bytes = base64.b64decode(db_b64)
-                    
                     if os.path.exists(self.db_path):
                         os.rename(self.db_path, self.db_path + ".bak")
-                        
                     with open(self.db_path, "wb") as f:
                         f.write(db_bytes)
-                    
                     Clock.schedule_once(lambda dt: self.actualizar_categorias(), 0)
                     Clock.schedule_once(lambda dt: self.actualizar_meses_spinner(), 0)
                     Clock.schedule_once(lambda dt: self.actualizar_pantalla(), 0)
-                    
-                    if callback: Clock.schedule_once(lambda dt: callback(True, "Datos restaurados exitosamente desde tu correo."), 0)
+                    if callback: Clock.schedule_once(lambda dt: callback(True, "Datos restaurados."), 0)
                 else:
-                    if callback: Clock.schedule_once(lambda dt: callback(False, "No se encontraron datos en la nube para este correo."), 0)
+                    if callback: Clock.schedule_once(lambda dt: callback(False, "No hay datos en la nube."), 0)
             except Exception as e:
-                escribir_log(f"Error bajando backup: {e}")
-                if callback: Clock.schedule_once(lambda dt: callback(False, f"Error de conexión: {e}"), 0)
-
+                if callback: Clock.schedule_once(lambda dt: callback(False, f"Error: {e}"), 0)
         threading.Thread(target=tarea).start()
-    # =========================================================================
 
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
-        
         lbl_titulo = Label(text=f"[font=FontAwesome]{chr(0xf544)}[/font] Asesor Financiero IA", markup=True, size_hint_y=None, height=dp(40), color=(0.5, 0.2, 0.8, 1), font_size='18sp')
         contenido.add_widget(lbl_titulo)
         
         scroll = ScrollView(size_hint_y=0.7)
-        lbl_respuesta = Label(text="Hola, soy tu asesor financiero. ¿En qué te puedo ayudar hoy?", 
-                              halign='left', valign='top', size_hint_y=None, color=(1,1,1,1))
+        lbl_respuesta = Label(text="Hola, soy tu asesor financiero. ¿En qué te puedo ayudar hoy?", halign='left', valign='top', size_hint_y=None, color=(1,1,1,1))
         lbl_respuesta.bind(width=lambda inst, val: setattr(inst, 'text_size', (val, None)))
         lbl_respuesta.bind(texture_size=lambda inst, val: setattr(inst, 'height', val[1]))
         scroll.add_widget(lbl_respuesta)
         
-        input_pregunta = TextInput(
-            hint_text="Ej: ¿Cómo puedo ahorrar este mes?",
-            multiline=False,
-            size_hint_y=None,
-            height=dp(45),
-            background_normal='',
-            background_color=(1, 1, 1, 1),
-            foreground_color=(0, 0, 0, 1),
-            padding=dp(8)
-        )
-        
+        input_pregunta = TextInput(hint_text="Ej: ¿Cómo puedo ahorrar este mes?", multiline=False, size_hint_y=None, height=dp(45), background_normal='', background_color=(1, 1, 1, 1), foreground_color=(0, 0, 0, 1), padding=dp(8))
         btn_enviar = Button(text="Enviar a la IA", size_hint_y=None, height=dp(45), background_color=(0.5, 0.2, 0.8, 1), bold=True)
         
         contenido.add_widget(scroll)
@@ -732,13 +754,10 @@ class GastosApp(App):
         def enviar(instance):
             pregunta = input_pregunta.text.strip()
             if not pregunta: return
-            
             lbl_respuesta.text = "Pensando..."
             input_pregunta.text = ""
-            
             btn_enviar.disabled = True
             btn_enviar.text = "Consultando..."
-            
             threading.Thread(target=self.consultar_ia, args=(pregunta, lbl_respuesta, btn_enviar)).start()
             
         btn_enviar.bind(on_release=enviar)
@@ -747,40 +766,24 @@ class GastosApp(App):
         try:
             mes_actual = datetime.now().strftime('%Y-%m')
             gastos = get_expenses_for_month(self.db_path, mes_actual)
-            
             resumen = ""
             for row in gastos:
                 desc, amount, cat = row[2], row[3], row[4]
                 tags = row[6] if len(row) > 6 else ""
                 etiqueta = f" #{tags}" if tags else ""
                 resumen += f"- {desc}{etiqueta} ({cat}): ${amount}\n"
-                
-            if not resumen:
-                resumen = "El usuario no tiene gastos registrados este mes."
-
-            prompt = f"""Eres un asesor financiero experto y amigable. 
-            El usuario te hace esta pregunta: "{pregunta}".
-            Aquí está el resumen de los gastos del usuario este mes:
-            {resumen}
-            
-            Responde de forma concisa, práctica y motivadora en español. Máximo 3 párrafos."""
+            if not resumen: resumen = "El usuario no tiene gastos registrados este mes."
+            prompt = f"Eres un asesor financiero experto y amigable. Pregunta: '{pregunta}'. Gastos: {resumen}. Responde en español, máx 3 párrafos."
             
             headers = {'Content-Type': 'application/json'}
             data = {"contents": [{"parts":[{"text": prompt}]}]}
-
-            modelos = [
-                "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash-lite",
-                "gemini-3.6-flash", "gemini-3.8-flash", "gemini-3-flash-preview",
-                "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"
-            ]
+            modelos = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
             
             respuesta_exitosa = False
             texto_final = ""
-
             for modelo in modelos:
                 Clock.schedule_once(lambda dt, m=modelo: setattr(label_respuesta, 'text', f"Conectando con {m}..."), 0)
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
-                
                 try:
                     response = requests.post(url, headers=headers, json=data, timeout=15)
                     if response.status_code == 200:
@@ -791,14 +794,12 @@ class GastosApp(App):
                             break
                 except Exception:
                     continue 
-
             if respuesta_exitosa:
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
             else:
-                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Todos los modelos gratuitos están saturados.\n\nEspera 1 minuto y vuelve a intentar."), 0)
-                
+                Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', "❌ Modelos saturados. Espera 1 min."), 0)
         except Exception as e:
-            Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', f"Error inesperado: {str(e)}"), 0)
+            Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', f"Error: {str(e)}"), 0)
         finally:
             Clock.schedule_once(lambda dt: (setattr(btn_enviar, 'disabled', False), setattr(btn_enviar, 'text', "Enviar a la IA")), 0)
 
@@ -806,15 +807,7 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
         logo_img = KivyImage(source='logo.png', size_hint_y=0.35, fit_mode='contain')
         contenido.add_widget(logo_img)
-        texto = """
-        [b]¡Bienvenido a Gestión de Gastos![/b]
-        
-        1. Configura tu [b]Correo[/b] y tu [b]Salario[/b].
-        2. Escribe tu gasto abajo y dale [b]GUARDAR[/b].
-        3. Usa el botón morado para hablar con la [b]IA[/b].
-        
-        ¡Empieza a controlar tus finanzas hoy!
-        """
+        texto = "[b]¡Bienvenido a Gestión de Gastos![/b]\n\n1. Configura tu Correo y Salario.\n2. Registra tus gastos.\n3. Usa el botón IA."
         lbl = Label(text=texto, markup=True, halign='center', valign='middle', size_hint_y=0.5)
         lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
         contenido.add_widget(lbl)
@@ -831,34 +824,35 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
         inp_pin = TextInput(hint_text="****", password=True, multiline=False, input_filter='int', halign='center', font_size='24sp', size_hint_y=None, height=dp(50))
         btn_entrar = Button(text="Desbloquear", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        
+        # BOTÓN DE HUELLA CON ICONO
+        btn_huella = Button(text="[font=FontAwesome]\\uf577[/font] Usar Huella", markup=True, size_hint_y=None, height=dp(45), background_color=(0.2, 0.4, 0.8, 1))
+        
         btn_olvido = Button(text="¿Olvidaste tu PIN?", size_hint_y=None, height=dp(30), background_normal='', background_color=(0.3, 0.3, 0.3, 1))
-        contenido.add_widget(Label(text="Ingresa tu PIN:", halign='center'))
+        contenido.add_widget(Label(text="Ingresa tu PIN o usa tu huella:", halign='center'))
         contenido.add_widget(inp_pin)
         contenido.add_widget(btn_entrar)
+        contenido.add_widget(btn_huella)
         contenido.add_widget(btn_olvido)
         
-        if self.otp_solicitado:
-            btn_ingresar_otp = Button(text="Ya tengo el código", size_hint_y=None, height=dp(35), background_normal='', background_color=(0.1, 0.5, 0.8, 1))
-            contenido.add_widget(btn_ingresar_otp)
-            btn_ingresar_otp.bind(on_release=lambda x: (popup.dismiss(), self.ingresar_codigo_otp()))
+        popup = Popup(title='🔒 App Bloqueada', content=contenido, size_hint=(0.8, 0.6), auto_dismiss=False)
         
-        popup = Popup(title='🔒 App Bloqueada', content=contenido, size_hint=(0.8, 0.55), auto_dismiss=False)
         def desbloquear(instance):
             if inp_pin.text == pin_guardado:
                 self.acceso_concedido = True
-                self.otp_solicitado = False
-                self.codigo_otp = None
                 popup.dismiss()
                 self.actualizar_meses_spinner()
                 self.actualizar_pantalla()
             else:
                 inp_pin.text = ""
                 self.aviso("PIN incorrecto", "Error")
-        def recuperar(instance):
-            popup.dismiss()
-            self.solicitar_correo_recuperacion()
+                
+        def intentar_huella(instance):
+            self.aviso("El sensor de huella se está configurando. Usa el PIN por ahora.", "Aviso")
+            
         btn_entrar.bind(on_release=desbloquear)
-        btn_olvido.bind(on_release=recuperar)
+        btn_huella.bind(on_release=intentar_huella)
+        btn_olvido.bind(on_release=lambda x: (popup.dismiss(), self.solicitar_correo_recuperacion()))
         popup.open()
         return False
 
@@ -870,7 +864,7 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         inp_correo = TextInput(hint_text="Ingresa tu correo registrado", multiline=False, size_hint_y=None, height=dp(40))
         btn_validar = Button(text="Enviar Código", size_hint_y=None, height=dp(45), background_color=(0.1, 0.5, 0.8, 1))
-        contenido.add_widget(Label(text="Escribe tu correo para recibir un código:", size_hint_y=None, height=dp(40)))
+        contenido.add_widget(Label(text="Escribe tu correo para recibir un código:"))
         contenido.add_widget(inp_correo)
         contenido.add_widget(btn_validar)
         popup = Popup(title='Recuperar PIN', content=contenido, size_hint=(0.9, 0.4))
@@ -891,7 +885,7 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         inp_codigo = TextInput(hint_text="Código de 6 dígitos", multiline=False, input_filter='int', size_hint_y=None, height=dp(40), halign='center')
         btn_validar = Button(text="Verificar", size_hint_y=None, height=dp(45), background_color=(0.1, 0.5, 0.8, 1))
-        contenido.add_widget(Label(text="Ingresa el código de 6 dígitos:", size_hint_y=None, height=dp(40)))
+        contenido.add_widget(Label(text="Ingresa el código de 6 dígitos:"))
         contenido.add_widget(inp_codigo)
         contenido.add_widget(btn_validar)
         popup = Popup(title='Verificación', content=contenido, size_hint=(0.9, 0.45), auto_dismiss=False)
@@ -908,7 +902,7 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         inp_nuevo_pin = TextInput(hint_text="Nuevo PIN de 4 dígitos", password=True, multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
         btn_guardar = Button(text="Guardar Nuevo PIN", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        contenido.add_widget(Label(text="Ingresa tu nuevo PIN:", size_hint_y=None, height=dp(20)))
+        contenido.add_widget(Label(text="Ingresa tu nuevo PIN:"))
         contenido.add_widget(inp_nuevo_pin)
         contenido.add_widget(btn_guardar)
         popup = Popup(title='Nuevo PIN', content=contenido, size_hint=(0.9, 0.35))
@@ -929,18 +923,18 @@ class GastosApp(App):
     def _enviar_otp_email(self, correo_destino, codigo):
         try:
             headers = {"Authorization": f"Bearer {TU_API_KEY}", "Content-Type": "application/json"}
-            html_content = f"<h2>Recuperación de PIN</h2><p>Tu código es:</p><h1 style='color: #1e88e5; font-size: 32px;'>{codigo}</h1>"
+            html_content = f"<h2>Recuperación de PIN</h2><p>Tu código es:</p><h1>{codigo}</h1>"
             data = {"from": f"Seguridad App <{CORREO_REMITENTE}>", "to": [correo_destino], "subject": "Código de Seguridad", "html": html_content}
             requests.post("https://api.resend.com/emails", headers=headers, json=data, timeout=30)
         except Exception as e:
-            print(f"Error al enviar OTP: {e}")
+            pass
 
     def configurar_pin(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         pin_actual = get_user_pin(self.db_path)
         inp_pin = TextInput(text=pin_actual if pin_actual else "", hint_text="Nuevo PIN (vacío para quitar)", password=True, input_filter='int', multiline=False, size_hint_y=None, height=dp(40))
         btn_guardar = Button(text="Guardar PIN", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        contenido.add_widget(Label(text="Configurar PIN:", size_hint_y=None, height=dp(20)))
+        contenido.add_widget(Label(text="Configurar PIN:"))
         contenido.add_widget(inp_pin)
         contenido.add_widget(btn_guardar)
         popup = Popup(title='Seguridad', content=contenido, size_hint=(0.9, 0.35))
@@ -956,10 +950,9 @@ class GastosApp(App):
         correo_actual = get_user_email(self.db_path) or ""
         entrada_correo = TextInput(text=correo_actual, hint_text="tucorreo@gmail.com", multiline=False, size_hint_y=None, height=dp(40))
         btn_guardar = Button(text="Guardar y Sincronizar", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        
         btn_descargar = Button(text="☁️ Descargar Datos de este Correo", size_hint_y=None, height=dp(45), background_color=(0.2, 0.4, 0.8, 1))
         
-        contenido.add_widget(Label(text="Correo para reportes y respaldo en la nube:", size_hint_y=None, height=dp(30)))
+        contenido.add_widget(Label(text="Correo para reportes y respaldo en la nube:"))
         contenido.add_widget(entrada_correo)
         contenido.add_widget(btn_guardar)
         contenido.add_widget(btn_descargar)
@@ -970,13 +963,10 @@ class GastosApp(App):
             nuevo_correo = entrada_correo.text.strip()
             if "@" in nuevo_correo:
                 save_user_email(self.db_path, nuevo_correo)
-                self.aviso("¡Correo guardado!\nSincronizando datos...", "Éxito")
+                self.aviso("¡Correo guardado!\nSincronizando...", "Éxito")
                 popup.dismiss()
-                
                 def callback_descarga(exito, msj):
-                    if exito:
-                        self.aviso(msj, "Sincronización Exitosa")
-                
+                    if exito: self.aviso(msj, "Sincronización Exitosa")
                 self.descargar_de_la_nube(callback_descarga)
             else:
                 self.aviso("Ingresa un correo válido.", "Error")
@@ -985,14 +975,11 @@ class GastosApp(App):
             if not entrada_correo.text.strip():
                 self.aviso("Primero escribe tu correo.", "Error")
                 return
-            
             save_user_email(self.db_path, entrada_correo.text.strip())
             popup.dismiss()
-            self.aviso("Buscando datos en la nube...", "Procesando")
-            
+            self.aviso("Buscando datos...", "Procesando")
             def callback_descarga(exito, msj):
                 self.aviso(msj, "Nube" if exito else "Error")
-            
             self.descargar_de_la_nube(callback_descarga)
             
         btn_guardar.bind(on_release=guardar)
@@ -1019,9 +1006,9 @@ class GastosApp(App):
         botones.add_widget(btn_aplicar)
         botones.add_widget(btn_borrar)
         
-        contenido.add_widget(Label(text="Desde:", size_hint_y=None, height=dp(20), halign='left'))
+        contenido.add_widget(Label(text="Desde:"))
         contenido.add_widget(row_inicio)
-        contenido.add_widget(Label(text="Hasta:", size_hint_y=None, height=dp(20), halign='left'))
+        contenido.add_widget(Label(text="Hasta:"))
         contenido.add_widget(row_fin)
         contenido.add_widget(botones)
         
@@ -1070,7 +1057,7 @@ class GastosApp(App):
             if self._stt_clock: self._stt_clock.cancel()
             self._stt_clock = Clock.schedule_interval(self._revisar_resultado_voz, 0.5)
         except Exception as e:
-            self.aviso(f"Error de micrófono: {e}", "Error")
+            self.aviso(f"Error de micrófono: Asegúrate de dar permisos de grabación.", "Error")
 
     def _revisar_resultado_voz(self, dt):
         try:
@@ -1118,6 +1105,44 @@ class GastosApp(App):
         if not self.root or 'movimientos' not in self.root.ids: return
         self.actualizar_pantalla()
 
+    def mostrar_comparacion(self):
+        now = datetime.now()
+        mes_actual_str = now.strftime('%Y-%m')
+        total_mes_actual = get_totals_for_month(self.db_path, mes_actual_str)
+        
+        if now.month == 1:
+            mes_anterior_str = f"{now.year - 1}-12"
+            nombre_mes_ant = "Dic"
+        else:
+            mes_anterior_str = f"{now.year}-{now.month - 1:02d}"
+            nombre_mes_ant = now.replace(month=now.month - 1).strftime('%b')
+            
+        total_mes_anterior = get_totals_for_month(self.db_path, mes_anterior_str)
+        nombre_mes_act = now.strftime('%b')
+
+        if total_mes_actual == 0 and total_mes_anterior == 0:
+            self.aviso("No hay gastos registrados en ninguno de los dos meses.", "Sin datos")
+            return
+
+        datos_barras = [
+            (nombre_mes_anterior, total_mes_anterior, (0.8, 0.3, 0.3, 1)),
+            (nombre_mes_act, total_mes_actual, (0.2, 0.6, 0.8, 1))
+        ]
+
+        contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(15))
+        contenido.add_widget(Label(text="[b]Comparación de Gastos[/b]", markup=True, size_hint_y=None, height=dp(40), font_size='18sp', color=(1,1,1,1)))
+        contenido.add_widget(BarChart(datos_barras, size_hint_y=0.6))
+        
+        leyenda = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
+        for label, val, color in datos_barras:
+            box = BoxLayout(orientation='vertical')
+            box.add_widget(Label(text=f"[b]{label}[/b]", markup=True, color=color))
+            box.add_widget(Label(text=self.formato(val), color=(1,1,1,1)))
+            leyenda.add_widget(box)
+            
+        contenido.add_widget(leyenda)
+        Popup(title='Comparación Mensual', content=contenido, size_hint=(0.9, 0.7)).open()
+
     def mostrar_grafico(self):
         if self.mes_actual_seleccionado:
             year_month = self.mes_actual_seleccionado
@@ -1164,7 +1189,7 @@ class GastosApp(App):
         salario_actual = get_user_salary(self.db_path)
         entrada_salario = TextInput(text=str(int(salario_actual)) if salario_actual > 0 else "", hint_text="Ej: 1500000", multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
         btn_guardar = Button(text="Guardar Salario", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        contenido.add_widget(Label(text="Tu salario mensual:", size_hint_y=None, height=dp(30)))
+        contenido.add_widget(Label(text="Tu salario mensual:"))
         contenido.add_widget(entrada_salario)
         contenido.add_widget(btn_guardar)
         popup = Popup(title='Mi Salario', content=contenido, size_hint=(0.9, 0.4))
@@ -1195,10 +1220,8 @@ class GastosApp(App):
             for cat, monto_limite in presupuestos:
                 gastado = get_total_category_expense(self.db_path, mes_actual, cat)
                 porcentaje = (gastado / monto_limite) * 100 if monto_limite > 0 else 0
-                
                 color = (0.9, 0.3, 0.3, 1) if gastado > monto_limite else (0.2, 0.9, 0.5, 1)
                 texto = f"[b]{cat}[/b]: Límite {self.formato(monto_limite)}\nGastado {self.formato(gastado)} ({porcentaje:.1f}%)"
-                
                 lbl = Label(text=texto, markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(45), color=color, text_size=(dp(300), None))
                 lista.add_widget(lbl)
                 
@@ -1263,20 +1286,17 @@ class GastosApp(App):
     def registrar_gasto(self):
         text = self.root.ids.gasto.text.strip()
         if not text: return
+        
         cat_text = self.root.ids.categoria.text
         categoria = cat_text.replace('Categoría: ', '').strip()
         moneda = self.root.ids.moneda.text
+        tags = self.root.ids.tag_input.text.strip()
         
         lineas = [line.strip() for line in re.split(r'\n|,', text) if line.strip()]
         total_guardado = 0; gastos_guardados = 0; errores = []
+        
         for linea in lineas:
             try:
-                tags = ""
-                match_tag = re.search(r'#(\w+)', linea)
-                if match_tag:
-                    tags = match_tag.group(1)
-                    linea = linea.replace(match_tag.group(0), '').strip()
-                
                 result = parse_expense(linea)
                 if result:
                     description, amount = result
@@ -1289,8 +1309,8 @@ class GastosApp(App):
                 
         if gastos_guardados > 0:
             self.root.ids.gasto.text = ''
+            self.root.ids.tag_input.text = ''
             self.root.ids.estado.text = f'Guardados {gastos_guardados} gastos.'
-            
             self.subir_a_la_nube() 
 
             limite_cat = get_category_budget(self.db_path, categoria)
@@ -1397,32 +1417,28 @@ class GastosApp(App):
 
     def abrir_editar(self, expense_id, desc, amount, cat, tags=""):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
-        
-        texto_inicial = f"{desc} {amount}"
-        if tags: texto_inicial += f" #{tags}"
-        
-        entrada_texto = TextInput(text=texto_inicial, multiline=False, size_hint_y=None, height=dp(40))
-        
+        entrada_texto = TextInput(text=f"{desc} {amount}", multiline=False, size_hint_y=None, height=dp(40))
+        inp_tags = TextInput(text=tags, hint_text="Etiqueta (Ej: Cumple)", multiline=False, size_hint_y=None, height=dp(40))
         spinner_cat = Spinner(text=cat, values=tuple(self.lista_categorias), size_hint_y=None, height=dp(40), background_normal='', background_color=(0.3, 0.35, 0.45, 1), color=(1, 1, 1, 1))
         btn_guardar = Button(text="Guardar Cambios", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        contenido.add_widget(Label(text="Editar monto, descripción y #tag:", size_hint_y=None, height=dp(20)))
-        contenido.add_widget(entrada_texto); contenido.add_widget(Label(text="Categoría:", size_hint_y=None, height=dp(20))); contenido.add_widget(spinner_cat); contenido.add_widget(btn_guardar)
-        popup = Popup(title='Editar', content=contenido, size_hint=(0.9, 0.6))
+        
+        contenido.add_widget(Label(text="Editar monto y descripción:"))
+        contenido.add_widget(entrada_texto)
+        contenido.add_widget(Label(text="Editar Etiqueta:"))
+        contenido.add_widget(inp_tags)
+        contenido.add_widget(Label(text="Categoría:"))
+        contenido.add_widget(spinner_cat)
+        contenido.add_widget(btn_guardar)
+        
+        popup = Popup(title='Editar', content=contenido, size_hint=(0.9, 0.65))
         popup.open()
         
         def guardar(instance):
             try:
-                texto_editado = entrada_texto.text.strip()
-                new_tags = ""
-                match_tag = re.search(r'#(\w+)', texto_editado)
-                if match_tag:
-                    new_tags = match_tag.group(1)
-                    texto_editado = texto_editado.replace(match_tag.group(0), '').strip()
-                    
-                result = parse_expense(texto_editado)
+                result = parse_expense(entrada_texto.text)
                 if result:
                     nueva_desc, nuevo_monto = result
-                    update_expense(self.db_path, expense_id, nueva_desc, nuevo_monto, spinner_cat.text, new_tags)
+                    update_expense(self.db_path, expense_id, nueva_desc, nuevo_monto, spinner_cat.text, inp_tags.text.strip())
                     popup.dismiss()
                     self.actualizar_pantalla()
                     self.root.ids.estado.text = "Gasto editado."
@@ -1543,7 +1559,7 @@ class GastosApp(App):
                     person = person if person is not None else "Desconocido"
                     color = (0.2, 0.9, 0.5, 1) if type_d == 'me_deben' else (0.9, 0.3, 0.3, 1)
                     texto = f"{'Te debe' if type_d == 'me_deben' else 'Debes a'}: {person} - {self.formato(amount)}"
-                    fila = BoxLayout(size_hint_y=None, height=dp(45))
+                    fila = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
                     lbl = Label(text=texto, color=color, text_size=(dp(180), None))
                     btn_pagar = Button(text="Pagada", size_hint_x=None, width=dp(60), background_color=(0.2, 0.8, 0.5, 1))
                     btn_del = Button(text="X", size_hint_x=None, width=dp(30), background_color=(0.8, 0.2, 0.2, 1))
@@ -1612,25 +1628,21 @@ class GastosApp(App):
             try:
                 mes_actual = datetime.now().strftime('%Y-%m')
                 datos = get_expenses_by_category_month(self.db_path, mes_actual)
-                
                 if datos:
                     img = Image.new('RGB', (400, 400), color='white')
                     draw = ImageDraw.Draw(img)
-                    
                     total = sum(d[1] for d in datos)
                     start_angle = 0
                     colores = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
-                    
                     for i, d in enumerate(datos):
                         angle = (d[1] / total) * 360
                         end_angle = start_angle + angle
                         draw.pieslice([50, 50, 350, 350], start=start_angle, end=end_angle, fill=colores[i % len(colores)])
                         start_angle = end_angle
-                        
                     img.save(path_img)
                     path_img_valido = True
             except Exception as e_graf:
-                escribir_log(f"Fallo grafico PDF (Pillow): {e_graf}")
+                pass
 
             pdf = FPDF()
             pdf.add_page()
