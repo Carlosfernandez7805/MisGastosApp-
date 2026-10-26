@@ -10,11 +10,21 @@ import time
 import json
 import urllib.parse
 
+# =========================================================================
+# 👇 FUNCIÓN PARA GUARDAR EL REPORTE DE ERRORES EN DESCARGAS 👇
+# =========================================================================
 def escribir_log(mensaje):
     try:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] {mensaje}")
+        # Intentamos guardar en la carpeta de Descargas pública
+        ruta_log = "/storage/emulated/0/Download/estado_inicio.txt"
+        with open(ruta_log, "a") as f:
+            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensaje}\n")
     except:
-        pass
+        # Si falla por permisos (Android 11+), al menos lo imprimimos en consola
+        try:
+            print(f"[LOG] {mensaje}")
+        except:
+            pass
 
 escribir_log("--- INICIANDO APP ---")
 
@@ -23,7 +33,7 @@ try:
     from fpdf import FPDF
     from PIL import Image, ImageDraw
 except Exception as e:
-    escribir_log(f"Error importando librerías: {e}")
+    escribir_log(f"Error importando librerías: {traceback.format_exc()}")
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -68,7 +78,7 @@ export_excel = None
 try:
     from excel import export_excel
 except Exception as e:
-    pass
+    escribir_log(f"Error cargando Excel: {traceback.format_exc()}")
 
 ruta_de_tu_app = os.path.dirname(os.path.abspath(__file__))
 resource_add_path(ruta_de_tu_app)
@@ -87,7 +97,7 @@ try:
     ruta_emoji = os.path.join(ruta_de_tu_app, "NotoEmoji-Regular.ttf")
     LabelBase.register(name="NotoEmoji", fn_regular=ruta_emoji)
 except Exception as e:
-    print(f"Error cargando fuente de emojis: {e}")
+    escribir_log(f"Error cargando fuente NotoEmoji: {e}")
 
 # =========================================================================
 # 👇 CLASE NATIVA PARA EL MICRÓFONO (SPEECH RECOGNIZER) 👇
@@ -127,13 +137,11 @@ class SpeechRecognizer:
             from jnius import PythonJavaClass, java_method, autoclass
             from android import activity
             
-            # Creamos el Intent para pedir voz
             self.intent = self.Intent(self.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE_MODEL, self.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE, self.Locale.getDefault())
             self.intent.putExtra(self.RecognizerIntent.EXTRA_PROMPT, "Habla ahora...")
             
-            # Listener para los resultados
             class RecognitionListener(PythonJavaClass):
                 __javainterfaces__ = ['android/speech/RecognitionListener']
                 __javacontext__ = 'app'
@@ -143,24 +151,19 @@ class SpeechRecognizer:
                     self.callback = callback
                 
                 @java_method('(Landroid/os/Bundle;)V')
-                def onReadyForSpeech(self, params):
-                    pass
+                def onReadyForSpeech(self, params): pass
                 
                 @java_method('()V')
-                def onBeginningOfSpeech(self):
-                    pass
+                def onBeginningOfSpeech(self): pass
                 
                 @java_method('(F)V')
-                def onRmsChanged(self, rmsdB):
-                    pass
+                def onRmsChanged(self, rmsdB): pass
                 
                 @java_method('([B)V')
-                def onBufferReceived(self, buffer):
-                    pass
+                def onBufferReceived(self, buffer): pass
                 
                 @java_method('()V')
-                def onEndOfSpeech(self):
-                    pass
+                def onEndOfSpeech(self): pass
                 
                 @java_method('(I)V')
                 def onError(self, error):
@@ -178,12 +181,10 @@ class SpeechRecognizer:
                         self.callback(None, str(e))
                 
                 @java_method('(Landroid/os/Bundle;)V')
-                def onPartialResults(self, partialResults):
-                    pass
+                def onPartialResults(self, partialResults): pass
                 
                 @java_method('(Landroid/os/Bundle;)V')
-                def onEvent(self, eventType, params):
-                    pass
+                def onEvent(self, eventType, params): pass
             
             self.listener = RecognitionListener(callback)
             self.recognizer.setRecognitionListener(self.listener)
@@ -776,14 +777,17 @@ class GastosApp(App):
     is_listening = False
 
     def build(self):
+        escribir_log("Iniciando build...")
         self.title = 'Mi Control de Gastos'
         self.db_path = os.path.join(self.user_data_dir, 'gastos.db')
         self.seguridad = BiometricAuth()
         self.speech = SpeechRecognizer()
         try:
             init_db(self.db_path)
+            escribir_log("Base de datos OK")
             return Builder.load_string(KV)
         except Exception as e:
+            escribir_log(f"Error en build: {traceback.format_exc()}")
             return Label(text=f"Error Crítico:\n{e}")
 
     def on_start(self):
@@ -794,12 +798,13 @@ class GastosApp(App):
                 perms.append(Permission.RECORD_AUDIO)
             request_permissions(perms)
         except Exception as e:
-            pass
+            escribir_log(f"Error pidiendo permisos: {e}")
             
         Clock.schedule_once(self.iniciar_app, 0.5)
 
     def iniciar_app(self, dt):
         try:
+            escribir_log("Iniciando app...")
             if not self.verificar_pin(): return
             if not get_tutorial_shown(self.db_path):
                 self.mostrar_bienvenida()
@@ -807,7 +812,9 @@ class GastosApp(App):
             self.actualizar_categorias() 
             self.actualizar_meses_spinner()
             self.actualizar_pantalla()
+            escribir_log("App iniciada correctamente")
         except Exception as e:
+            escribir_log(f"Error en iniciar_app: {traceback.format_exc()}")
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
     def actualizar_categorias(self):
@@ -949,7 +956,7 @@ class GastosApp(App):
             headers = {'Content-Type': 'application/json'}
             data = {"contents": [{"parts":[{"text": prompt}]}]}
             
-            # LISTA COMPLETA DE MODELOS GEMINI GRATUITOS VIGENTES (2026)
+            # LISTA COMPLETA DE MODELOS GEMINI GRATUITOS VIGENTES
             modelos = [
                 "gemini-3.8-flash",
                 "gemini-3.6-flash",
@@ -977,8 +984,10 @@ class GastosApp(App):
                             respuesta_exitosa = True
                             break
                 except requests.exceptions.Timeout:
-                    continue # Si se demora más de 10s, pasa al siguiente modelo
-                except Exception:
+                    escribir_log(f"Timeout con modelo {modelo}")
+                    continue 
+                except Exception as e:
+                    escribir_log(f"Error con modelo {modelo}: {e}")
                     continue 
             if respuesta_exitosa:
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
