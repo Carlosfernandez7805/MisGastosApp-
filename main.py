@@ -89,31 +89,58 @@ except Exception as e:
     pass
 
 # =========================================================================
-# 👇 CLASE NATIVA PARA LA HUELLA DACTILAR (ANDROID) 👇
+# 👇 CLASE NATIVA PARA LA HUELLA DACTILAR (USANDO BLOQUEO DE ANDROID) 👇
 # =========================================================================
 class BiometricAuth:
     def __init__(self):
-        self.available = False
+        self.disponible = False
         try:
             from jnius import autoclass
-            from android import activity
             self.Context = autoclass('android.content.Context')
-            self.BiometricManager = autoclass('android.hardware.biometrics.BiometricManager')
             self.PythonActivity = autoclass('org.kivy.android.PythonActivity')
             self.activity = self.PythonActivity.mActivity
             
-            result = self.BiometricManager.from(self.activity).canAuthenticate(
-                self.BiometricManager.BIOMETRIC_STRONG | self.BiometricManager.BIOMETRIC_WEAK
-            )
-            self.available = (result == self.BiometricManager.BIOMETRIC_SUCCESS)
+            # Verificamos si el teléfono tiene bloqueo de pantalla seguro (PIN/Huella)
+            km = self.activity.getSystemService(self.Context.KEYGUARD_SERVICE)
+            if km.isKeyguardSecure():
+                self.disponible = True
         except Exception as e:
-            print(f"Biometría no disponible: {e}")
-            self.available = False
+            print(f"Error cargando seguridad: {e}")
+            self.disponible = False
 
     def autenticar(self, callback):
-        # Por estabilidad en Kivy, si el sensor existe, pedimos el PIN 
-        # ya que la UI nativa de huella requiere integración Java compleja.
-        Clock.schedule_once(lambda dt: callback(False), 1) 
+        if not self.disponible:
+            callback(False)
+            return
+            
+        try:
+            from jnius import autoclass
+            from android import activity
+            
+            # Usamos getattr para evitar el error de la palabra reservada 'from'
+            self.KeyguardManager = autoclass('android.app.KeyguardManager')
+            km = self.activity.getSystemService(self.Context.KEYGUARD_SERVICE)
+            
+            # Creamos la ventana de desbloqueo de Android
+            intent = km.createConfirmDeviceCredentialIntent(
+                "Desbloquear Mis Gastos", 
+                "Usa tu huella o PIN del teléfono"
+            )
+            
+            def on_activity_result(requestCode, resultCode, data):
+                if requestCode == 1001:
+                    if resultCode == -1: # RESULT_OK
+                        callback(True)
+                    else:
+                        callback(False)
+                    activity.unbind(on_activity_result=on_activity_result)
+            
+            activity.bind(on_activity_result=on_activity_result)
+            self.activity.startActivityForResult(intent, 1001)
+            
+        except Exception as e:
+            print(f"Error al pedir huella: {e}")
+            callback(False)
 # =========================================================================
 
 KV = '''
@@ -162,7 +189,7 @@ BoxLayout:
                     size: self.size
                     radius: [dp(8)]
         Button:
-            text: '[font=FontAwesome]\\uf555[/font]'
+            text: '[font=FontAwesome]\\uf53d[/font]'
             markup: True
             size_hint_x: None
             width: dp(40)
@@ -609,6 +636,7 @@ class GastosApp(App):
     def build(self):
         self.title = 'Mi Control de Gastos'
         self.db_path = os.path.join(self.user_data_dir, 'gastos.db')
+        self.seguridad = BiometricAuth()
         try:
             init_db(self.db_path)
             return Builder.load_string(KV)
@@ -820,22 +848,36 @@ class GastosApp(App):
     def verificar_pin(self):
         pin_guardado = get_user_pin(self.db_path)
         if not pin_guardado: return True
+        
         self.acceso_concedido = False
         contenido = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
         inp_pin = TextInput(hint_text="****", password=True, multiline=False, input_filter='int', halign='center', font_size='24sp', size_hint_y=None, height=dp(50))
-        btn_entrar = Button(text="Desbloquear", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        btn_entrar = Button(text="[font=FontAwesome]\\uf023[/font] Desbloquear", markup=True, size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
         
-        # BOTÓN DE HUELLA CON ICONO
-        btn_huella = Button(text="[font=FontAwesome]\\uf577[/font] Usar Huella", markup=True, size_hint_y=None, height=dp(45), background_color=(0.2, 0.4, 0.8, 1))
-        
-        btn_olvido = Button(text="¿Olvidaste tu PIN?", size_hint_y=None, height=dp(30), background_normal='', background_color=(0.3, 0.3, 0.3, 1))
         contenido.add_widget(Label(text="Ingresa tu PIN o usa tu huella:", halign='center'))
         contenido.add_widget(inp_pin)
         contenido.add_widget(btn_entrar)
-        contenido.add_widget(btn_huella)
+        
+        # SI EL TELÉFONO TIENE HUELLA, MOSTRAMOS EL BOTÓN
+        if self.seguridad.disponible:
+            btn_huella = Button(text="[font=FontAwesome]\\uf577[/font] Usar Huella", markup=True, size_hint_y=None, height=dp(45), background_color=(0.2, 0.4, 0.8, 1))
+            contenido.add_widget(btn_huella)
+            
+            def exito_huella(exito):
+                if exito:
+                    self.acceso_concedido = True
+                    popup.dismiss()
+                    self.actualizar_meses_spinner()
+                    self.actualizar_pantalla()
+                else:
+                    self.aviso("Huella cancelada o incorrecta.", "Error")
+                    
+            btn_huella.bind(on_release=lambda x: self.seguridad.autenticar(exito_huella))
+        
+        btn_olvido = Button(text="¿Olvidaste tu PIN?", size_hint_y=None, height=dp(30), background_normal='', background_color=(0.3, 0.3, 0.3, 1))
         contenido.add_widget(btn_olvido)
         
-        popup = Popup(title='🔒 App Bloqueada', content=contenido, size_hint=(0.8, 0.6), auto_dismiss=False)
+        popup = Popup(title='🔒 App Bloqueada', content=contenido, size_hint=(0.8, 0.65), auto_dismiss=False)
         
         def desbloquear(instance):
             if inp_pin.text == pin_guardado:
@@ -847,11 +889,7 @@ class GastosApp(App):
                 inp_pin.text = ""
                 self.aviso("PIN incorrecto", "Error")
                 
-        def intentar_huella(instance):
-            self.aviso("El sensor de huella se está configurando. Usa el PIN por ahora.", "Aviso")
-            
         btn_entrar.bind(on_release=desbloquear)
-        btn_huella.bind(on_release=intentar_huella)
         btn_olvido.bind(on_release=lambda x: (popup.dismiss(), self.solicitar_correo_recuperacion()))
         popup.open()
         return False
