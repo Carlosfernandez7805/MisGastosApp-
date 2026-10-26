@@ -82,14 +82,15 @@ TU_CLAVE_GEMINI_AQUI = "TU_CLAVE_GEMINI_AQUI"
 URL_FIREBASE = "https://mis-gastos-app-87b40-default-rtdb.firebaseio.com/" 
 # =========================================================================
 
+# 👇 REGISTRAMOS LA NUEVA FUENTE DE EMOJIS 👇
 try:
-    ruta_fuente = os.path.join(ruta_de_tu_app, "fa-solid-900.ttf")
-    LabelBase.register(name="FontAwesome", fn_regular=ruta_fuente)
+    ruta_emoji = os.path.join(ruta_de_tu_app, "NotoEmoji-Regular.ttf")
+    LabelBase.register(name="NotoEmoji", fn_regular=ruta_emoji)
 except Exception as e:
-    pass
+    print(f"Error cargando fuente de emojis: {e}")
 
 # =========================================================================
-# 👇 CLASE NATIVA PARA LA HUELLA DACTILAR (USANDO BLOQUEO DE ANDROID) 👇
+# 👇 CLASE NATIVA PARA LA HUELLA DACTILAR 👇
 # =========================================================================
 class BiometricAuth:
     def __init__(self):
@@ -100,28 +101,23 @@ class BiometricAuth:
             self.PythonActivity = autoclass('org.kivy.android.PythonActivity')
             self.activity = self.PythonActivity.mActivity
             
-            # Verificamos si el teléfono tiene bloqueo de pantalla seguro (PIN/Huella)
             km = self.activity.getSystemService(self.Context.KEYGUARD_SERVICE)
             if km.isKeyguardSecure():
                 self.disponible = True
         except Exception as e:
-            print(f"Error cargando seguridad: {e}")
             self.disponible = False
 
     def autenticar(self, callback):
         if not self.disponible:
             callback(False)
             return
-            
         try:
             from jnius import autoclass
             from android import activity
             
-            # Usamos getattr para evitar el error de la palabra reservada 'from'
             self.KeyguardManager = autoclass('android.app.KeyguardManager')
             km = self.activity.getSystemService(self.Context.KEYGUARD_SERVICE)
             
-            # Creamos la ventana de desbloqueo de Android
             intent = km.createConfirmDeviceCredentialIntent(
                 "Desbloquear Mis Gastos", 
                 "Usa tu huella o PIN del teléfono"
@@ -129,7 +125,7 @@ class BiometricAuth:
             
             def on_activity_result(requestCode, resultCode, data):
                 if requestCode == 1001:
-                    if resultCode == -1: # RESULT_OK
+                    if resultCode == -1:
                         callback(True)
                     else:
                         callback(False)
@@ -139,7 +135,6 @@ class BiometricAuth:
             self.activity.startActivityForResult(intent, 1001)
             
         except Exception as e:
-            print(f"Error al pedir huella: {e}")
             callback(False)
 # =========================================================================
 
@@ -172,12 +167,15 @@ BoxLayout:
             halign: 'left'
             valign: 'middle'
             text_size: self.size
+        
+        # BOTONES CON EMOJIS UNICODE Y FUENTE NOTOEMOJI
         Button:
-            text: '[font=FontAwesome]\\uf023[/font]'
+            text: '[font=NotoEmoji]🔒[/font]'
             markup: True
             size_hint_x: None
-            width: dp(40)
-            font_size: '16sp'
+            width: dp(45)
+            font_size: '22sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: 0, 0, 0, 0
             on_release: app.configurar_pin()
@@ -189,11 +187,12 @@ BoxLayout:
                     size: self.size
                     radius: [dp(8)]
         Button:
-            text: '[font=FontAwesome]\\uf53d[/font]'
+            text: '[font=NotoEmoji]💵[/font]'
             markup: True
             size_hint_x: None
-            width: dp(40)
-            font_size: '16sp'
+            width: dp(45)
+            font_size: '22sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: 0, 0, 0, 0
             on_release: app.abrir_configuracion_salario()
@@ -205,11 +204,12 @@ BoxLayout:
                     size: self.size
                     radius: [dp(8)]
         Button:
-            text: '[font=FontAwesome]\\uf0e0[/font]'
+            text: '[font=NotoEmoji]✉️[/font]'
             markup: True
             size_hint_x: None
-            width: dp(40)
-            font_size: '16sp'
+            width: dp(45)
+            font_size: '22sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: 0, 0, 0, 0
             on_release: app.abrir_configuracion_correo()
@@ -250,9 +250,12 @@ BoxLayout:
                 on_text: self.text = 'Categoría: ' + self.text if not self.text.startswith('Categoría:') else self.text
             
             Button:
-                text: '⚙️'
+                text: '[font=NotoEmoji]➕[/font]'
+                markup: True
                 size_hint_x: None
-                width: dp(35)
+                width: dp(40)
+                font_size: '20sp'
+                color: (1, 1, 1, 1) 
                 background_normal: ''
                 background_color: (0.4, 0.45, 0.55, 1)
                 on_release: app.abrir_gestion_categorias()
@@ -294,11 +297,12 @@ BoxLayout:
                 padding: dp(8)
                 
             Button:
-                text: '[font=FontAwesome]\\uf130[/font]'
+                text: '[font=NotoEmoji]🎤[/font]'
                 markup: True
                 size_hint_x: None
-                width: dp(50)
-                font_size: '20sp'
+                width: dp(55)
+                font_size: '24sp'
+                color: (1, 1, 1, 1) 
                 background_normal: ''
                 background_color: 0, 0, 0, 0
                 on_release: app.activar_microfono()
@@ -311,12 +315,14 @@ BoxLayout:
                         radius: [dp(8)]
             
     Button:
-        text: 'GUARDAR GASTOS'
+        text: '[font=NotoEmoji]💾[/font] GUARDAR GASTOS'
+        markup: True
         size_hint_y: None
         height: dp(48)
         background_normal: ''
         background_color: 0, 0, 0, 0
         bold: True
+        font_size: '16sp'
         color: (1, 1, 1, 1)
         on_release: app.registrar_gasto()
         canvas.before:
@@ -391,10 +397,12 @@ BoxLayout:
                 halign: 'center'
                 text_size: self.size
             Button:
-                text: 'Calendario'
-                font_size: '12sp'
+                text: '[font=NotoEmoji]📅[/font]'
+                markup: True
+                font_size: '14sp'
                 background_normal: ''
                 background_color: (0.2, 0.4, 0.6, 1)
+                color: (1, 1, 1, 1) 
                 on_release: app.abrir_filtro_fechas()
 
     BoxLayout:
@@ -429,44 +437,58 @@ BoxLayout:
         height: dp(140)
         spacing: dp(5)
         Button:
-            text: '📌 Fijos'
-            font_size: '11sp'
+            text: '[font=NotoEmoji]📌[/font]\\nFijos'
+            markup: True
+            font_size: '12sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: (0.6, 0.4, 0.2, 1)
             on_release: app.abrir_gastos_recurrentes()
         Button:
-            text: '🎯 Metas'
-            font_size: '11sp'
+            text: '[font=NotoEmoji]🎯[/font]\\nMetas'
+            markup: True
+            font_size: '12sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: (0.2, 0.6, 0.6, 1)
             on_release: app.abrir_metas_ahorro()
         Button:
-            text: '💸 Deudas'
-            font_size: '11sp'
+            text: '[font=NotoEmoji]💸[/font]\\nDeudas'
+            markup: True
+            font_size: '12sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: (0.8, 0.4, 0.1, 1)
             on_release: app.abrir_deudas()
         Button:
-            text: '💰 Ingresos'
-            font_size: '11sp'
+            text: '[font=NotoEmoji]💰[/font]\\nIngresos'
+            markup: True
+            font_size: '12sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: (0.1, 0.5, 0.2, 1)
             on_release: app.abrir_ingresos()
         Button:
-            text: '📋 Presupuesto'
-            font_size: '11sp'
+            text: '[font=NotoEmoji]📋[/font]\\nPresupuesto'
+            markup: True
+            font_size: '12sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: (0.6, 0.2, 0.4, 1)
             on_release: app.abrir_presupuestos()
         Button:
-            text: '📊 Comparar'
-            font_size: '11sp'
+            text: '[font=NotoEmoji]📊[/font]\\nComparar'
+            markup: True
+            font_size: '12sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: (0.9, 0.5, 0.1, 1)
             on_release: app.mostrar_comparacion()
         Button:
-            text: '🍕 Gráfico'
-            font_size: '11sp'
+            text: '[font=NotoEmoji]📈[/font]\\nGráfico'
+            markup: True
+            font_size: '12sp'
+            color: (1, 1, 1, 1)
             background_normal: ''
             background_color: (0.6, 0.3, 0.8, 1)
             on_release: app.mostrar_grafico()
@@ -478,7 +500,8 @@ BoxLayout:
         
         TextInput:
             id: buscar_texto
-            hint_text: '🔍 Buscar por descripción o etiqueta...'
+            hint_text: '🔍 Buscar por etiqueta...'
+            hint_text_color: (0.5, 0.5, 0.5, 1)
             multiline: False
             background_normal: ''
             background_color: (1, 1, 1, 0.1)
@@ -496,13 +519,15 @@ BoxLayout:
             height: self.minimum_height
             
     Button:
-        text: '[font=FontAwesome]\\uf544[/font] PREGUNTAR A LA IA'
+        text: '[font=NotoEmoji]🤖[/font] PREGUNTAR A LA IA'
         markup: True
         size_hint_y: None
         height: dp(45)
         background_normal: ''
         background_color: (0.5, 0.2, 0.8, 1)
         bold: True
+        font_size: '14sp'
+        color: (1, 1, 1, 1)
         on_release: app.abrir_chat_ia()
         
     GridLayout:
@@ -512,24 +537,30 @@ BoxLayout:
         spacing: dp(5)
         
         Button:
-            text: '📗 EXCEL'
+            text: '[font=NotoEmoji]📗[/font] EXCEL'
             markup: True
+            font_size: '14sp'
             background_normal: ''
             background_color: (0.1, 0.5, 0.8, 1)
+            color: (1, 1, 1, 1)
             on_release: app.generar_excel()
             
         Button:
-            text: '📄 PDF'
+            text: '[font=NotoEmoji]📕[/font] PDF'
             markup: True
+            font_size: '14sp'
             background_normal: ''
             background_color: (0.8, 0.2, 0.2, 1)
+            color: (1, 1, 1, 1)
             on_release: app.generar_pdf()
             
         Button:
-            text: '☁️ BACKUP'
+            text: '[font=NotoEmoji]☁️[/font] BACKUP'
             markup: True
+            font_size: '14sp'
             background_normal: ''
             background_color: (0.3, 0.35, 0.45, 1)
+            color: (1, 1, 1, 1)
             on_release: app.generar_respaldo()
 '''
 
@@ -684,7 +715,7 @@ class GastosApp(App):
             for cat in get_all_categories(self.db_path):
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(5))
                 lbl = Label(text=cat, halign='left', valign='middle', text_size=(dp(200), None))
-                btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
+                btn_del = Button(text="[font=NotoEmoji]🗑️[/font]", markup=True, size_hint_x=None, width=dp(40), font_size='18sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
                 
                 if cat not in ['General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros']:
                     btn_del.bind(on_release=lambda instance, c=cat: (delete_category(self.db_path, c), recargar_lista(), self.actualizar_categorias()))
@@ -699,7 +730,7 @@ class GastosApp(App):
         
         form = BoxLayout(orientation='vertical', size_hint_y=0.4, spacing=dp(5))
         inp_nueva_cat = TextInput(hint_text="Nueva Categoría (Ej: Mascotas)", multiline=False, size_hint_y=None, height=dp(40))
-        btn_add = Button(text="Agregar Categoría", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        btn_add = Button(text="[font=NotoEmoji]➕[/font] Agregar Categoría", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
         
         def agregar(instance):
             nueva = inp_nueva_cat.text.strip().capitalize()
@@ -760,7 +791,7 @@ class GastosApp(App):
 
     def abrir_chat_ia(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
-        lbl_titulo = Label(text=f"[font=FontAwesome]{chr(0xf544)}[/font] Asesor Financiero IA", markup=True, size_hint_y=None, height=dp(40), color=(0.5, 0.2, 0.8, 1), font_size='18sp')
+        lbl_titulo = Label(text="[font=NotoEmoji]🤖[/font] Asesor Financiero IA", markup=True, size_hint_y=None, height=dp(40), color=(0.5, 0.2, 0.8, 1), font_size='18sp')
         contenido.add_widget(lbl_titulo)
         
         scroll = ScrollView(size_hint_y=0.7)
@@ -770,7 +801,7 @@ class GastosApp(App):
         scroll.add_widget(lbl_respuesta)
         
         input_pregunta = TextInput(hint_text="Ej: ¿Cómo puedo ahorrar este mes?", multiline=False, size_hint_y=None, height=dp(45), background_normal='', background_color=(1, 1, 1, 1), foreground_color=(0, 0, 0, 1), padding=dp(8))
-        btn_enviar = Button(text="Enviar a la IA", size_hint_y=None, height=dp(45), background_color=(0.5, 0.2, 0.8, 1), bold=True)
+        btn_enviar = Button(text="[font=NotoEmoji]✈️[/font] Enviar a la IA", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.5, 0.2, 0.8, 1), bold=True, color=(1,1,1,1))
         
         contenido.add_widget(scroll)
         contenido.add_widget(input_pregunta)
@@ -829,7 +860,7 @@ class GastosApp(App):
         except Exception as e:
             Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', f"Error: {str(e)}"), 0)
         finally:
-            Clock.schedule_once(lambda dt: (setattr(btn_enviar, 'disabled', False), setattr(btn_enviar, 'text', "Enviar a la IA")), 0)
+            Clock.schedule_once(lambda dt: (setattr(btn_enviar, 'disabled', False), setattr(btn_enviar, 'text', "[font=NotoEmoji]✈️[/font] Enviar a la IA")), 0)
 
     def mostrar_bienvenida(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
@@ -839,7 +870,7 @@ class GastosApp(App):
         lbl = Label(text=texto, markup=True, halign='center', valign='middle', size_hint_y=0.5)
         lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
         contenido.add_widget(lbl)
-        btn_ok = Button(text="¡Empezar!", size_hint_y=None, height=dp(50), background_color=(0.06, 0.72, 0.5, 1), bold=True)
+        btn_ok = Button(text="[font=NotoEmoji]✔️[/font] ¡Empezar!", markup=True, size_hint_y=None, height=dp(50), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), bold=True, color=(1,1,1,1))
         contenido.add_widget(btn_ok)
         popup = Popup(title='Bienvenido', content=contenido, size_hint=(0.9, 0.8), auto_dismiss=False)
         btn_ok.bind(on_release=popup.dismiss)
@@ -852,15 +883,15 @@ class GastosApp(App):
         self.acceso_concedido = False
         contenido = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
         inp_pin = TextInput(hint_text="****", password=True, multiline=False, input_filter='int', halign='center', font_size='24sp', size_hint_y=None, height=dp(50))
-        btn_entrar = Button(text="[font=FontAwesome]\\uf023[/font] Desbloquear", markup=True, size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        
+        btn_entrar = Button(text="[font=NotoEmoji]🔓[/font] Desbloquear", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
         
         contenido.add_widget(Label(text="Ingresa tu PIN o usa tu huella:", halign='center'))
         contenido.add_widget(inp_pin)
         contenido.add_widget(btn_entrar)
         
-        # SI EL TELÉFONO TIENE HUELLA, MOSTRAMOS EL BOTÓN
         if self.seguridad.disponible:
-            btn_huella = Button(text="[font=FontAwesome]\\uf577[/font] Usar Huella", markup=True, size_hint_y=None, height=dp(45), background_color=(0.2, 0.4, 0.8, 1))
+            btn_huella = Button(text="[font=NotoEmoji]👆[/font] Usar Huella", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.2, 0.4, 0.8, 1), color=(1,1,1,1))
             contenido.add_widget(btn_huella)
             
             def exito_huella(exito):
@@ -874,10 +905,10 @@ class GastosApp(App):
                     
             btn_huella.bind(on_release=lambda x: self.seguridad.autenticar(exito_huella))
         
-        btn_olvido = Button(text="¿Olvidaste tu PIN?", size_hint_y=None, height=dp(30), background_normal='', background_color=(0.3, 0.3, 0.3, 1))
+        btn_olvido = Button(text="¿Olvidaste tu PIN?", size_hint_y=None, height=dp(30), background_normal='', background_color=(0.3, 0.3, 0.3, 1), color=(1,1,1,1))
         contenido.add_widget(btn_olvido)
         
-        popup = Popup(title='🔒 App Bloqueada', content=contenido, size_hint=(0.8, 0.65), auto_dismiss=False)
+        popup = Popup(title='App Bloqueada', content=contenido, size_hint=(0.8, 0.65), auto_dismiss=False)
         
         def desbloquear(instance):
             if inp_pin.text == pin_guardado:
@@ -901,7 +932,7 @@ class GastosApp(App):
             return
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         inp_correo = TextInput(hint_text="Ingresa tu correo registrado", multiline=False, size_hint_y=None, height=dp(40))
-        btn_validar = Button(text="Enviar Código", size_hint_y=None, height=dp(45), background_color=(0.1, 0.5, 0.8, 1))
+        btn_validar = Button(text="[font=NotoEmoji]✉️[/font] Enviar Código", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.1, 0.5, 0.8, 1), color=(1,1,1,1))
         contenido.add_widget(Label(text="Escribe tu correo para recibir un código:"))
         contenido.add_widget(inp_correo)
         contenido.add_widget(btn_validar)
@@ -922,7 +953,7 @@ class GastosApp(App):
     def ingresar_codigo_otp(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         inp_codigo = TextInput(hint_text="Código de 6 dígitos", multiline=False, input_filter='int', size_hint_y=None, height=dp(40), halign='center')
-        btn_validar = Button(text="Verificar", size_hint_y=None, height=dp(45), background_color=(0.1, 0.5, 0.8, 1))
+        btn_validar = Button(text="[font=NotoEmoji]✔️[/font] Verificar", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.1, 0.5, 0.8, 1), color=(1,1,1,1))
         contenido.add_widget(Label(text="Ingresa el código de 6 dígitos:"))
         contenido.add_widget(inp_codigo)
         contenido.add_widget(btn_validar)
@@ -939,7 +970,7 @@ class GastosApp(App):
     def crear_nuevo_pin(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         inp_nuevo_pin = TextInput(hint_text="Nuevo PIN de 4 dígitos", password=True, multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
-        btn_guardar = Button(text="Guardar Nuevo PIN", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        btn_guardar = Button(text="[font=NotoEmoji]📝[/font] Guardar Nuevo PIN", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
         contenido.add_widget(Label(text="Ingresa tu nuevo PIN:"))
         contenido.add_widget(inp_nuevo_pin)
         contenido.add_widget(btn_guardar)
@@ -971,7 +1002,7 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         pin_actual = get_user_pin(self.db_path)
         inp_pin = TextInput(text=pin_actual if pin_actual else "", hint_text="Nuevo PIN (vacío para quitar)", password=True, input_filter='int', multiline=False, size_hint_y=None, height=dp(40))
-        btn_guardar = Button(text="Guardar PIN", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        btn_guardar = Button(text="[font=NotoEmoji]💾[/font] Guardar PIN", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
         contenido.add_widget(Label(text="Configurar PIN:"))
         contenido.add_widget(inp_pin)
         contenido.add_widget(btn_guardar)
@@ -987,8 +1018,8 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         correo_actual = get_user_email(self.db_path) or ""
         entrada_correo = TextInput(text=correo_actual, hint_text="tucorreo@gmail.com", multiline=False, size_hint_y=None, height=dp(40))
-        btn_guardar = Button(text="Guardar y Sincronizar", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
-        btn_descargar = Button(text="☁️ Descargar Datos de este Correo", size_hint_y=None, height=dp(45), background_color=(0.2, 0.4, 0.8, 1))
+        btn_guardar = Button(text="[font=NotoEmoji]☁️[/font] Guardar y Sincronizar", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
+        btn_descargar = Button(text="[font=NotoEmoji]📥[/font] Descargar Datos", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.2, 0.4, 0.8, 1), color=(1,1,1,1))
         
         contenido.add_widget(Label(text="Correo para reportes y respaldo en la nube:"))
         contenido.add_widget(entrada_correo)
@@ -1039,8 +1070,8 @@ class GastosApp(App):
         row_fin.add_widget(d2); row_fin.add_widget(m2); row_fin.add_widget(y2)
 
         botones = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(10))
-        btn_aplicar = Button(text="Aplicar Filtro", background_color=(0.2, 0.4, 0.6, 1))
-        btn_borrar = Button(text="Quitar Filtro", background_color=(0.8, 0.2, 0.2, 1))
+        btn_aplicar = Button(text="[font=NotoEmoji]✔️[/font] Aplicar", markup=True, font_size='16sp', background_color=(0.2, 0.4, 0.6, 1), color=(1,1,1,1))
+        btn_borrar = Button(text="[font=NotoEmoji]❌[/font] Quitar", markup=True, font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
         botones.add_widget(btn_aplicar)
         botones.add_widget(btn_borrar)
         
@@ -1226,7 +1257,7 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         salario_actual = get_user_salary(self.db_path)
         entrada_salario = TextInput(text=str(int(salario_actual)) if salario_actual > 0 else "", hint_text="Ej: 1500000", multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
-        btn_guardar = Button(text="Guardar Salario", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        btn_guardar = Button(text="[font=NotoEmoji]💾[/font] Guardar Salario", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
         contenido.add_widget(Label(text="Tu salario mensual:"))
         contenido.add_widget(entrada_salario)
         contenido.add_widget(btn_guardar)
@@ -1269,7 +1300,7 @@ class GastosApp(App):
         form = BoxLayout(orientation='vertical', size_hint_y=0.4, spacing=dp(5))
         spinner_cat = Spinner(text='General', values=tuple(self.lista_categorias), size_hint_y=None, height=dp(35), background_normal='', background_color=(0.3, 0.35, 0.45, 1))
         inp_monto = TextInput(hint_text="Límite (Ej: 500000)", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
-        btn_add = Button(text="Establecer Límite", size_hint_y=None, height=dp(40), background_color=(0.6, 0.2, 0.4, 1))
+        btn_add = Button(text="[font=NotoEmoji]➕[/font] Establecer Límite", markup=True, size_hint_y=None, height=dp(40), font_size='16sp', background_color=(0.6, 0.2, 0.4, 1), color=(1,1,1,1))
         
         def agregar(instance):
             if inp_monto.text:
@@ -1296,7 +1327,7 @@ class GastosApp(App):
             for i_id, desc, amount, date_str in get_all_incomes_month(self.db_path, mes_actual):
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
                 lbl = Label(text=f"{desc} - {self.formato(amount)}", halign='left', valign='middle', color=(0.2, 0.9, 0.5, 1), text_size=(dp(200), None))
-                btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
+                btn_del = Button(text="[font=NotoEmoji]🗑️[/font]", markup=True, size_hint_x=None, width=dp(40), font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
                 btn_del.bind(on_release=lambda instance, x=i_id: (delete_income(self.db_path, x), recargar_lista(), self.actualizar_pantalla(), self.subir_a_la_nube()))
                 fila.add_widget(lbl); fila.add_widget(btn_del); lista.add_widget(fila)
                 
@@ -1306,7 +1337,7 @@ class GastosApp(App):
         form = BoxLayout(orientation='vertical', size_hint_y=0.4, spacing=dp(5))
         inp_desc = TextInput(hint_text="Descripción (Ej: Bono)", multiline=False, size_hint_y=None, height=dp(35))
         inp_monto = TextInput(hint_text="Monto extra", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
-        btn_add = Button(text="Registrar Ingreso", size_hint_y=None, height=dp(40), background_color=(0.1, 0.5, 0.2, 1))
+        btn_add = Button(text="[font=NotoEmoji]➕[/font] Registrar Ingreso", markup=True, size_hint_y=None, height=dp(40), font_size='16sp', background_color=(0.1, 0.5, 0.2, 1), color=(1,1,1,1))
         
         def agregar(instance):
             if inp_desc.text and inp_monto.text:
@@ -1442,9 +1473,9 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         contenido.add_widget(Label(text="¿Qué deseas hacer?", halign='center', size_hint_y=None, height=dp(30)))
         botones = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(10))
-        btn_editar = Button(text="Editar", background_color=(0.1, 0.5, 0.8, 1))
-        btn_eliminar = Button(text="Eliminar", background_color=(0.8, 0.2, 0.2, 1))
-        btn_cancelar = Button(text="Cancelar", background_color=(0.3, 0.3, 0.3, 1))
+        btn_editar = Button(text="[font=NotoEmoji]📝[/font] Editar", markup=True, font_size='16sp', background_color=(0.1, 0.5, 0.8, 1), color=(1,1,1,1))
+        btn_eliminar = Button(text="[font=NotoEmoji]🗑️[/font] Eliminar", markup=True, font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
+        btn_cancelar = Button(text="[font=NotoEmoji]❌[/font] Cancelar", markup=True, font_size='16sp', background_color=(0.3, 0.3, 0.3, 1), color=(1,1,1,1))
         botones.add_widget(btn_editar); botones.add_widget(btn_eliminar); botones.add_widget(btn_cancelar)
         contenido.add_widget(botones)
         popup = Popup(title='Opciones', content=contenido, size_hint=(0.9, 0.4))
@@ -1458,7 +1489,7 @@ class GastosApp(App):
         entrada_texto = TextInput(text=f"{desc} {amount}", multiline=False, size_hint_y=None, height=dp(40))
         inp_tags = TextInput(text=tags, hint_text="Etiqueta (Ej: Cumple)", multiline=False, size_hint_y=None, height=dp(40))
         spinner_cat = Spinner(text=cat, values=tuple(self.lista_categorias), size_hint_y=None, height=dp(40), background_normal='', background_color=(0.3, 0.35, 0.45, 1), color=(1, 1, 1, 1))
-        btn_guardar = Button(text="Guardar Cambios", size_hint_y=None, height=dp(45), background_color=(0.06, 0.72, 0.5, 1))
+        btn_guardar = Button(text="[font=NotoEmoji]💾[/font] Guardar Cambios", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
         
         contenido.add_widget(Label(text="Editar monto y descripción:"))
         contenido.add_widget(entrada_texto)
@@ -1489,8 +1520,8 @@ class GastosApp(App):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(10))
         contenido.add_widget(Label(text="¿Eliminar este gasto?", halign='center'))
         botones = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(10))
-        btn_si = Button(text="Sí", background_color=(0.8, 0.2, 0.2, 1))
-        btn_no = Button(text="No", background_color=(0.3, 0.3, 0.3, 1))
+        btn_si = Button(text="[font=NotoEmoji]✔️[/font] Sí", markup=True, font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
+        btn_no = Button(text="[font=NotoEmoji]❌[/font] No", markup=True, font_size='16sp', background_color=(0.3, 0.3, 0.3, 1), color=(1,1,1,1))
         botones.add_widget(btn_si); botones.add_widget(btn_no); contenido.add_widget(botones)
         popup = Popup(title='Eliminar', content=contenido, size_hint=(0.8, 0.3), title_align='center')
         def eliminar(instance):
@@ -1512,7 +1543,7 @@ class GastosApp(App):
             for r_id, desc, amount, cat, day in get_recurring_expenses(self.db_path):
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
                 lbl = Label(text=f"Día {day}: {desc} - {self.formato(amount)}", halign='left', valign='middle', text_size=(dp(250), None))
-                btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
+                btn_del = Button(text="[font=NotoEmoji]🗑️[/font]", markup=True, size_hint_x=None, width=dp(40), font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
                 btn_del.bind(on_release=lambda instance, x=r_id: (delete_recurring_expense(self.db_path, x), recargar_lista(), self.subir_a_la_nube()))
                 fila.add_widget(lbl); fila.add_widget(btn_del); lista.add_widget(fila)
         recargar_lista()
@@ -1521,7 +1552,7 @@ class GastosApp(App):
         inp_desc = TextInput(hint_text="Ej: Netflix", multiline=False, size_hint_y=None, height=dp(35))
         inp_monto = TextInput(hint_text="Monto", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
         inp_dia = TextInput(hint_text="Día (1-31)", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
-        btn_add = Button(text="Agregar Fijo", size_hint_y=None, height=dp(40), background_color=(0.6, 0.4, 0.2, 1))
+        btn_add = Button(text="[font=NotoEmoji]➕[/font] Agregar Fijo", markup=True, size_hint_y=None, height=dp(40), font_size='16sp', background_color=(0.6, 0.4, 0.2, 1), color=(1,1,1,1))
         def agregar(instance):
             if inp_desc.text and inp_monto.text and inp_dia.text:
                 add_recurring_expense(self.db_path, inp_desc.text, int(inp_monto.text), "General", int(inp_dia.text))
@@ -1546,8 +1577,8 @@ class GastosApp(App):
                 lbl = Label(text=f"{name} ({porcentaje:.0f}%)\nAhorrado: {self.formato(saved)} / {self.formato(target)}", halign='left', valign='middle', size_hint_y=None, height=dp(40), text_size=(dp(250), None))
                 botones = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(5))
                 inp_abono = TextInput(hint_text="Abonar $", multiline=False, input_filter='int')
-                btn_abonar = Button(text="Abonar", size_hint_x=None, width=dp(70), background_color=(0.2, 0.6, 0.6, 1))
-                btn_del = Button(text="Borrar", size_hint_x=None, width=dp(60), background_color=(0.8, 0.2, 0.2, 1))
+                btn_abonar = Button(text="[font=NotoEmoji]➕[/font] Abonar", markup=True, size_hint_x=None, width=dp(80), font_size='14sp', background_color=(0.2, 0.6, 0.6, 1), color=(1,1,1,1))
+                btn_del = Button(text="[font=NotoEmoji]🗑️[/font]", markup=True, size_hint_x=None, width=dp(40), font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
                 def abonar(instance, x=g_id, inp=inp_abono):
                     if inp.text:
                         add_to_savings_goal(self.db_path, x, int(inp.text))
@@ -1562,7 +1593,7 @@ class GastosApp(App):
         form = BoxLayout(orientation='vertical', size_hint_y=0.4, spacing=dp(5))
         inp_nombre = TextInput(hint_text="Nombre meta", multiline=False, size_hint_y=None, height=dp(35))
         inp_meta = TextInput(hint_text="Monto meta", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
-        btn_add = Button(text="Crear Meta", size_hint_y=None, height=dp(40), background_color=(0.2, 0.6, 0.6, 1))
+        btn_add = Button(text="[font=NotoEmoji]➕[/font] Crear Meta", markup=True, size_hint_y=None, height=dp(40), font_size='16sp', background_color=(0.2, 0.6, 0.6, 1), color=(1,1,1,1))
         def agregar(instance):
             if inp_nombre.text and inp_meta.text:
                 add_savings_goal(self.db_path, inp_nombre.text, int(inp_meta.text))
@@ -1599,8 +1630,8 @@ class GastosApp(App):
                     texto = f"{'Te debe' if type_d == 'me_deben' else 'Debes a'}: {person} - {self.formato(amount)}"
                     fila = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
                     lbl = Label(text=texto, color=color, text_size=(dp(180), None))
-                    btn_pagar = Button(text="Pagada", size_hint_x=None, width=dp(60), background_color=(0.2, 0.8, 0.5, 1))
-                    btn_del = Button(text="X", size_hint_x=None, width=dp(30), background_color=(0.8, 0.2, 0.2, 1))
+                    btn_pagar = Button(text="Pagada", size_hint_x=None, width=dp(60), background_color=(0.2, 0.8, 0.5, 1), color=(1,1,1,1), font_size='12sp')
+                    btn_del = Button(text="[font=NotoEmoji]🗑️[/font]", markup=True, size_hint_x=None, width=dp(30), font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
                     def hacer_pago(instance, x=d_id):
                         update_debt_status(self.db_path, x, 'paid')
                         recargar_lista()
@@ -1624,8 +1655,8 @@ class GastosApp(App):
             inp_person = TextInput(hint_text="Nombre", multiline=False, size_hint_y=None, height=dp(35))
             inp_monto = TextInput(hint_text="Monto", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
             botones_tipo = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
-            btn_me_deben = Button(text="Me deben", background_color=(0.2, 0.8, 0.6, 1))
-            btn_yo_debo = Button(text="Yo debo", background_color=(0.4, 0.4, 0.4, 1))
+            btn_me_deben = Button(text="Me deben", background_color=(0.2, 0.8, 0.6, 1), color=(1,1,1,1), font_size='12sp')
+            btn_yo_debo = Button(text="Yo debo", background_color=(0.4, 0.4, 0.4, 1), color=(1,1,1,1), font_size='12sp')
             tipo_seleccionado = ["me_deben"]
             def set_me_deben(instance):
                 tipo_seleccionado[0] = "me_deben"
@@ -1638,7 +1669,7 @@ class GastosApp(App):
             btn_me_deben.bind(on_release=set_me_deben)
             btn_yo_debo.bind(on_release=set_yo_debo)
             botones_tipo.add_widget(btn_me_deben); botones_tipo.add_widget(btn_yo_debo)
-            btn_add = Button(text="Registrar Deuda", size_hint_y=None, height=dp(40), background_color=(0.8, 0.5, 0.2, 1))
+            btn_add = Button(text="[font=NotoEmoji]➕[/font] Registrar Deuda", markup=True, size_hint_y=None, height=dp(40), font_size='16sp', background_color=(0.8, 0.5, 0.2, 1), color=(1,1,1,1))
             def agregar(instance):
                 p = inp_person.text.strip(); m = inp_monto.text.strip()
                 if p and m:
