@@ -11,10 +11,9 @@ import json
 import urllib.parse
 
 def escribir_log(mensaje):
+    # Usamos print para que salga en el logcat de Android, sin pedir permisos de archivo
     try:
-        ruta_log = "/storage/emulated/0/Download/estado_inicio.txt"
-        with open(ruta_log, "a") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {mensaje}\n")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {mensaje}")
     except:
         pass
 
@@ -38,17 +37,7 @@ try:
 except Exception as e:
     escribir_log(f"Error Pillow: {e}")
 
-try:
-    from android.permissions import request_permissions, Permission
-    request_permissions([
-        Permission.INTERNET, 
-        Permission.WRITE_EXTERNAL_STORAGE, 
-        Permission.READ_EXTERNAL_STORAGE, 
-        "android.permission.MANAGE_EXTERNAL_STORAGE"
-    ])
-    escribir_log("Permisos Android solicitados OK")
-except Exception as e:
-    escribir_log(f"Error permisos Android: {e}")
+# SE ELIMINÓ EL BLOQUE DE PERMISOS DE ALMACENAMIENTO QUE CAUSABA EL REINICIO
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -86,7 +75,7 @@ from database import (
     save_category_budget, get_category_budget, get_all_category_budgets, get_total_category_expense,
     save_user_email, get_user_email, save_user_salary, get_user_salary, save_user_pin, get_user_pin,
     save_tutorial_shown, get_tutorial_shown,
-    get_all_categories, add_custom_category, delete_category # <-- NUEVAS FUNCIONES
+    get_all_categories, add_custom_category, delete_category
 )
 
 export_excel = None
@@ -105,8 +94,6 @@ resource_add_path(ruta_de_tu_app)
 TU_API_KEY = "re_TU_CLAVE_AQUI" 
 CORREO_REMITENTE = "reportes@tusgastosapp.lat"
 TU_CLAVE_GEMINI_AQUI = "TU_CLAVE_GEMINI_AQUI"
-
-# 👇 PEGA AQUÍ LA URL DE TU FIREBASE 👇
 URL_FIREBASE = "https://mis-gastos-app-87b40-default-rtdb.firebaseio.com/" 
 # =========================================================================
 
@@ -114,7 +101,7 @@ try:
     ruta_fuente = os.path.join(ruta_de_tu_app, "fa-solid-900.ttf")
     LabelBase.register(name="FontAwesome", fn_regular=ruta_fuente)
 except Exception as e:
-    pass
+    escribir_log(f"Error fuente: {e}")
 
 KV = '''
 BoxLayout:
@@ -213,7 +200,6 @@ BoxLayout:
             height: dp(30)
             spacing: dp(5)
             
-            # CATEGORÍAS DINÁMICAS
             Spinner:
                 id: categoria
                 text: 'Categoría: General'
@@ -223,7 +209,6 @@ BoxLayout:
                 color: (1, 1, 1, 1)
                 on_text: self.text = 'Categoría: ' + self.text if not self.text.startswith('Categoría:') else self.text
             
-            # BOTÓN PARA ADMINISTRAR CATEGORÍAS (NUEVO)
             Button:
                 text: '⚙️'
                 size_hint_x: None
@@ -556,7 +541,7 @@ class GastosApp(App):
     color_saldo = ListProperty([0.97, 0.98, 0.99, 1])
     altura_salario = NumericProperty(0)
     opacidad_salario = NumericProperty(0)
-    lista_categorias = ListProperty(['General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros']) # NUEVA PROPIEDAD
+    lista_categorias = ListProperty(['General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros'])
     _stt_clock = None
     mes_actual_seleccionado = None
     filtro_inicio = None
@@ -568,27 +553,42 @@ class GastosApp(App):
         self.title = 'Mi Control de Gastos'
         self.db_path = os.path.join(self.user_data_dir, 'gastos.db')
         try:
+            escribir_log("Iniciando Base de Datos...")
             init_db(self.db_path)
+            escribir_log("Base de Datos OK. Cargando Interfaz...")
             return Builder.load_string(KV)
         except Exception as e:
+            escribir_log(f"ERROR EN BUILD: {e}")
             return Label(text=f"Error Crítico:\n{e}")
 
     def on_start(self):
+        # PEDIMOS PERMISOS DE FORMA SEGURA AQUÍ
+        try:
+            from android.permissions import request_permissions, Permission, check_permission
+            if not check_permission(Permission.INTERNET):
+                request_permissions([Permission.INTERNET])
+            escribir_log("Permiso de Internet solicitado OK")
+        except Exception as e:
+            escribir_log(f"Error pidiendo permisos (ignorado): {e}")
+            
         Clock.schedule_once(self.iniciar_app, 0.5)
 
     def iniciar_app(self, dt):
         try:
+            escribir_log("Iniciando APP...")
             if not self.verificar_pin(): return
             if not get_tutorial_shown(self.db_path):
                 self.mostrar_bienvenida()
                 save_tutorial_shown(self.db_path)
-            self.actualizar_categorias() # NUEVA FUNCIÓN
+            self.actualizar_categorias() 
             self.actualizar_meses_spinner()
             self.actualizar_pantalla()
+            escribir_log("APP iniciada correctamente")
         except Exception as e:
+            escribir_log(f"Error en iniciar_app: {e}")
             self.aviso(f"Error al iniciar:\n{str(e)}", "Error Crítico")
 
-    # --- GESTIÓN DE CATEGORÍAS (NUEVO) ---
+    # --- GESTIÓN DE CATEGORÍAS ---
     def actualizar_categorias(self):
         cats = get_all_categories(self.db_path)
         self.lista_categorias = cats
@@ -609,7 +609,6 @@ class GastosApp(App):
                 lbl = Label(text=cat, halign='left', valign='middle', text_size=(dp(200), None))
                 btn_del = Button(text="X", size_hint_x=None, width=dp(40), background_color=(0.8, 0.2, 0.2, 1))
                 
-                # Proteger las básicas
                 if cat not in ['General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros']:
                     btn_del.bind(on_release=lambda instance, c=cat: (delete_category(self.db_path, c), recargar_lista(), self.actualizar_categorias()))
                 else:
@@ -640,7 +639,6 @@ class GastosApp(App):
         contenido.add_widget(form)
         
         Popup(title='Gestionar Categorías', content=contenido, size_hint=(0.95, 0.8)).open()
-    # ------------------------------------
 
     # =========================================================================
     # ☁️ SISTEMA DE SINCRONIZACIÓN EN LA NUBE
@@ -755,7 +753,9 @@ class GastosApp(App):
             gastos = get_expenses_for_month(self.db_path, mes_actual)
             
             resumen = ""
-            for _, _, desc, amount, cat, _, tags in gastos:
+            for row in gastos:
+                desc, amount, cat = row[2], row[3], row[4]
+                tags = row[6] if len(row) > 6 else ""
                 etiqueta = f" #{tags}" if tags else ""
                 resumen += f"- {desc}{etiqueta} ({cat}): ${amount}\n"
                 
@@ -1198,12 +1198,9 @@ class GastosApp(App):
             mes_actual = datetime.now().strftime('%Y-%m')
             for cat, monto_limite in presupuestos:
                 gastado = get_total_category_expense(self.db_path, mes_actual, cat)
-                # CÁLCULO DE PORCENTAJE (NUEVO)
                 porcentaje = (gastado / monto_limite) * 100 if monto_limite > 0 else 0
                 
                 color = (0.9, 0.3, 0.3, 1) if gastado > monto_limite else (0.2, 0.9, 0.5, 1)
-                
-                # TEXTO CON PORCENTAJE
                 texto = f"[b]{cat}[/b]: Límite {self.formato(monto_limite)}\nGastado {self.formato(gastado)} ({porcentaje:.1f}%)"
                 
                 lbl = Label(text=texto, markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(45), color=color, text_size=(dp(300), None))
@@ -1278,7 +1275,6 @@ class GastosApp(App):
         total_guardado = 0; gastos_guardados = 0; errores = []
         for linea in lineas:
             try:
-                # EXTRACCIÓN DE ETIQUETAS #tag (NUEVO)
                 tags = ""
                 match_tag = re.search(r'#(\w+)', linea)
                 if match_tag:
@@ -1288,7 +1284,6 @@ class GastosApp(App):
                 result = parse_expense(linea)
                 if result:
                     description, amount = result
-                    # SE PASA EL TAG A LA BASE DE DATOS (NUEVO)
                     add_expense(self.db_path, description, amount, datetime.now().isoformat(timespec='seconds'), categoria, moneda, tags)
                     if moneda == 'COP':
                         total_guardado += amount
@@ -1376,7 +1371,6 @@ class GastosApp(App):
             return
         
         for row in rows:
-            # Desempaquetar de forma segura por si acaso la DB no tiene la columna tags aún
             expense_id, created_at, description, amount, category, currency = row[:6]
             tags = row[6] if len(row) > 6 else ""
             
@@ -1408,7 +1402,6 @@ class GastosApp(App):
     def abrir_editar(self, expense_id, desc, amount, cat, tags=""):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         
-        # Se añade etiqueta en el texto a editar si existe
         texto_inicial = f"{desc} {amount}"
         if tags: texto_inicial += f" #{tags}"
         
@@ -1424,7 +1417,6 @@ class GastosApp(App):
         def guardar(instance):
             try:
                 texto_editado = entrada_texto.text.strip()
-                # Extraer tags del texto editado
                 new_tags = ""
                 match_tag = re.search(r'#(\w+)', texto_editado)
                 if match_tag:
@@ -1555,248 +1547,4 @@ class GastosApp(App):
                     person = person if person is not None else "Desconocido"
                     color = (0.2, 0.9, 0.5, 1) if type_d == 'me_deben' else (0.9, 0.3, 0.3, 1)
                     texto = f"{'Te debe' if type_d == 'me_deben' else 'Debes a'}: {person} - {self.formato(amount)}"
-                    fila = BoxLayout(size_hint_y=None, height=dp(45), spacing=dp(5))
-                    lbl = Label(text=texto, color=color, text_size=(dp(180), None))
-                    btn_pagar = Button(text="Pagada", size_hint_x=None, width=dp(60), background_color=(0.2, 0.8, 0.5, 1))
-                    btn_del = Button(text="X", size_hint_x=None, width=dp(30), background_color=(0.8, 0.2, 0.2, 1))
-                    def hacer_pago(instance, x=d_id):
-                        update_debt_status(self.db_path, x, 'paid')
-                        recargar_lista()
-                        self.actualizar_pantalla()
-                        self.subir_a_la_nube()
-                    def hacer_borrado(instance, x=d_id):
-                        delete_debt(self.db_path, x)
-                        recargar_lista()
-                        self.actualizar_pantalla()
-                        self.subir_a_la_nube()
-                    btn_pagar.bind(on_release=hacer_pago)
-                    btn_del.bind(on_release=hacer_borrado)
-                    fila.add_widget(lbl); fila.add_widget(btn_pagar); fila.add_widget(btn_del)
-                    lista.add_widget(fila)
-                    
-            recargar_lista()
-            scroll.add_widget(lista)
-            contenido.add_widget(scroll)
-            
-            form = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(160), spacing=dp(5))
-            inp_person = TextInput(hint_text="Nombre", multiline=False, size_hint_y=None, height=dp(35))
-            inp_monto = TextInput(hint_text="Monto", multiline=False, input_filter='int', size_hint_y=None, height=dp(35))
-            botones_tipo = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(5))
-            btn_me_deben = Button(text="Me deben", background_color=(0.2, 0.8, 0.6, 1))
-            btn_yo_debo = Button(text="Yo debo", background_color=(0.4, 0.4, 0.4, 1))
-            tipo_seleccionado = ["me_deben"]
-            def set_me_deben(instance):
-                tipo_seleccionado[0] = "me_deben"
-                btn_me_deben.background_color = (0.2, 0.8, 0.6, 1)
-                btn_yo_debo.background_color = (0.4, 0.4, 0.4, 1)
-            def set_yo_debo(instance):
-                tipo_seleccionado[0] = "yo_debo"
-                btn_me_deben.background_color = (0.4, 0.4, 0.4, 1)
-                btn_yo_debo.background_color = (0.8, 0.2, 0.2, 1)
-            btn_me_deben.bind(on_release=set_me_deben)
-            btn_yo_debo.bind(on_release=set_yo_debo)
-            botones_tipo.add_widget(btn_me_deben); botones_tipo.add_widget(btn_yo_debo)
-            btn_add = Button(text="Registrar Deuda", size_hint_y=None, height=dp(40), background_color=(0.8, 0.5, 0.2, 1))
-            def agregar(instance):
-                p = inp_person.text.strip(); m = inp_monto.text.strip()
-                if p and m:
-                    add_debt(self.db_path, p, int(m), tipo_seleccionado[0])
-                    inp_person.text = ""; inp_monto.text = ""
-                    recargar_lista()
-                    self.subir_a_la_nube()
-            btn_add.bind(on_release=agregar)
-            form.add_widget(inp_person); form.add_widget(inp_monto); form.add_widget(botones_tipo); form.add_widget(btn_add)
-            contenido.add_widget(form)
-            Popup(title='Deudas', content=contenido, size_hint=(0.95, 0.8)).open()
-        except Exception as e:
-            self.aviso(f"Error Deudas: {e}", "Error")
-
-    def generar_pdf(self):
-        try:
-            correo_del_usuario = get_user_email(self.db_path)
-            if not correo_del_usuario:
-                self.aviso("Configura tu correo primero.", "Falta correo")
-                return
-            path_pdf = os.path.join(self.user_data_dir, f'reporte_{date.today().isoformat()}.pdf')
-            path_img = os.path.join(self.user_data_dir, "grafico_temp.png")
-            
-            path_img_valido = False
-            try:
-                mes_actual = datetime.now().strftime('%Y-%m')
-                datos = get_expenses_by_category_month(self.db_path, mes_actual)
-                
-                if datos:
-                    img = Image.new('RGB', (400, 400), color='white')
-                    draw = ImageDraw.Draw(img)
-                    
-                    total = sum(d[1] for d in datos)
-                    start_angle = 0
-                    colores = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
-                    
-                    for i, d in enumerate(datos):
-                        angle = (d[1] / total) * 360
-                        end_angle = start_angle + angle
-                        draw.pieslice([50, 50, 350, 350], start=start_angle, end=end_angle, fill=colores[i % len(colores)])
-                        start_angle = end_angle
-                        
-                    img.save(path_img)
-                    path_img_valido = True
-            except Exception as e_graf:
-                escribir_log(f"Fallo grafico PDF (Pillow): {e_graf}")
-
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 18)
-            pdf.cell(0, 10, "Reporte Financiero Completo", ln=True, align='C')
-            pdf.set_font("Arial", 'I', 10)
-            pdf.cell(0, 10, f"Generado el: {date.today().isoformat()}", ln=True, align='C')
-            pdf.ln(5)
-            
-            if path_img_valido and os.path.exists(path_img):
-                pdf.image(path_img, x=60, y=35, w=90)
-                pdf.ln(90) 
-                os.remove(path_img)
-            else:
-                pdf.ln(10)
-
-            pdf.set_font("Arial", 'B', 14)
-            pdf.set_fill_color(230, 230, 230)
-            pdf.cell(0, 10, "1. Gastos del Mes", ln=True, fill=True)
-            pdf.set_font("Arial", 'B', 10)
-            pdf.cell(30, 8, "Fecha", 1); pdf.cell(70, 8, "Descripcion", 1); pdf.cell(40, 8, "Categoria", 1); pdf.cell(40, 8, "Monto", 1); pdf.ln()
-            pdf.set_font("Arial", '', 10)
-            rows = get_expenses_for_month(self.db_path, datetime.now().strftime('%Y-%m'))
-            for row in rows:
-                _, created_at, desc, amount, cat, curr = row[:6]
-                d_clean = desc.encode('latin-1', 'replace').decode('latin-1')
-                c_clean = cat.encode('latin-1', 'replace').decode('latin-1')
-                pdf.cell(30, 8, created_at[:10], 1); pdf.cell(70, 8, d_clean[:30], 1); pdf.cell(40, 8, c_clean, 1); pdf.cell(40, 8, f"{self.formato(amount)} {curr}", 1); pdf.ln()
-            pdf.ln(5)
-
-            if pdf.get_y() > 230: pdf.add_page()
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(0, 10, "2. Gastos Fijos Programados", ln=True, fill=True)
-            pdf.set_font("Arial", 'B', 10)
-            pdf.cell(100, 8, "Descripcion", 1); pdf.cell(40, 8, "Monto", 1); pdf.cell(40, 8, "Dia de Cobro", 1); pdf.ln()
-            pdf.set_font("Arial", '', 10)
-            fijos = get_recurring_expenses(self.db_path)
-            if fijos:
-                for f in fijos:
-                    d_clean = f[1].encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(100, 8, d_clean[:40], 1); pdf.cell(40, 8, self.formato(f[2]), 1); pdf.cell(40, 8, f"Día {f[4]}", 1); pdf.ln()
-            else:
-                pdf.cell(0, 8, "No hay gastos fijos registrados.", ln=True)
-            pdf.ln(5)
-
-            if pdf.get_y() > 230: pdf.add_page()
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(0, 10, "3. Ingresos Extra", ln=True, fill=True)
-            pdf.set_font("Arial", 'B', 10)
-            pdf.cell(100, 8, "Descripcion", 1); pdf.cell(40, 8, "Monto", 1); pdf.cell(40, 8, "Fecha", 1); pdf.ln()
-            pdf.set_font("Arial", '', 10)
-            ingresos = get_all_incomes_month(self.db_path, datetime.now().strftime('%Y-%m'))
-            if ingresos:
-                for i in ingresos:
-                    d_clean = i[1].encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(100, 8, d_clean[:40], 1); pdf.cell(40, 8, self.formato(i[2]), 1); pdf.cell(40, 8, i[3][:10], 1); pdf.ln()
-            else:
-                pdf.cell(0, 8, "No hay ingresos extra este mes.", ln=True)
-            pdf.ln(5)
-
-            if pdf.get_y() > 230: pdf.add_page()
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(0, 10, "4. Presupuestos", ln=True, fill=True)
-            pdf.set_font("Arial", 'B', 10)
-            pdf.cell(100, 8, "Categoria", 1); pdf.cell(40, 8, "Limite", 1); pdf.ln()
-            pdf.set_font("Arial", '', 10)
-            presupuestos = get_all_category_budgets(self.db_path)
-            if presupuestos:
-                for p in presupuestos:
-                    c_clean = p[0].encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(100, 8, c_clean, 1); pdf.cell(40, 8, self.formato(p[1]), 1); pdf.ln()
-            else:
-                pdf.cell(0, 8, "No hay presupuestos definidos.", ln=True)
-            pdf.ln(5)
-
-            if pdf.get_y() > 230: pdf.add_page()
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(0, 10, "5. Metas de Ahorro", ln=True, fill=True)
-            pdf.set_font("Arial", 'B', 10)
-            pdf.cell(100, 8, "Nombre", 1); pdf.cell(40, 8, "Meta", 1); pdf.cell(40, 8, "Ahorrado", 1); pdf.ln()
-            pdf.set_font("Arial", '', 10)
-            metas = get_savings_goals(self.db_path)
-            if metas:
-                for m in metas:
-                    n_clean = m[1].encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(100, 8, n_clean[:40], 1); pdf.cell(40, 8, self.formato(m[2]), 1); pdf.cell(40, 8, self.formato(m[3]), 1); pdf.ln()
-            else:
-                pdf.cell(0, 8, "No hay metas de ahorro.", ln=True)
-            pdf.ln(5)
-
-            if pdf.get_y() > 230: pdf.add_page()
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(0, 10, "6. Deudas Pendientes", ln=True, fill=True)
-            pdf.set_font("Arial", 'B', 10)
-            pdf.cell(80, 8, "Persona", 1); pdf.cell(40, 8, "Monto", 1); pdf.cell(60, 8, "Tipo", 1); pdf.ln()
-            pdf.set_font("Arial", '', 10)
-            deudas = get_debts(self.db_path, "pending")
-            if deudas:
-                for d in deudas:
-                    p_clean = d[1].encode('latin-1', 'replace').decode('latin-1')
-                    t_clean = d[3].encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(80, 8, p_clean[:30], 1); pdf.cell(40, 8, self.formato(d[2]), 1); pdf.cell(60, 8, "Me deben" if t_clean == 'me_deben' else "Yo debo", 1); pdf.ln()
-            else:
-                pdf.cell(0, 8, "No hay deudas pendientes.", ln=True)
-
-            pdf.output(path_pdf)
-            self.aviso("Generando PDF y enviando...", "Procesando")
-            threading.Thread(target=self._enviar_archivo_resend, args=(correo_del_usuario, path_pdf, "Reporte PDF")).start()
-        except Exception as e:
-            self.aviso(f"Error al generar PDF: {e}", "Error")
-
-    def generar_respaldo(self):
-        correo_del_usuario = get_user_email(self.db_path)
-        if not correo_del_usuario:
-            self.aviso("Configura tu correo primero.", "Falta correo")
-            return
-        self.aviso("Preparando respaldo...", "Procesando")
-        threading.Thread(target=self._enviar_archivo_resend, args=(correo_del_usuario, self.db_path, "Copia de Seguridad")).start()
-
-    def generar_excel(self):
-        try:
-            correo_del_usuario = get_user_email(self.db_path)
-            if not correo_del_usuario:
-                self.aviso("Configura tu correo primero.", "Falta correo")
-                return
-            if export_excel is None:
-                self.aviso("La librería de Excel no cargó.", "Error interno")
-                return
-            path_xlsx = os.path.join(self.user_data_dir, f'gastos_{date.today().isoformat()}.xlsx')
-            export_excel(self.db_path, path_xlsx)
-            self.aviso("Generando Excel y enviando...", "Procesando")
-            threading.Thread(target=self._enviar_archivo_resend, args=(correo_del_usuario, path_xlsx, "Reporte Excel")).start()
-        except Exception as exc:
-            self.aviso(f'Error al generar Excel: {exc}', 'Error')
-
-    def _enviar_archivo_resend(self, correo_del_usuario, path, tipo_reporte):
-        try:
-            with open(path, "rb") as f:
-                contenido_base64 = base64.b64encode(f.read()).decode('utf-8')
-            headers = {"Authorization": f"Bearer {TU_API_KEY}", "Content-Type": "application/json"}
-            data = {
-                "from": f"Mi App de Gastos <{CORREO_REMITENTE}>",
-                "to": [correo_del_usuario],
-                "subject": f"{tipo_reporte} - {date.today().isoformat()}",
-                "html": f"<p>Hola, adjunto encontrarás tu {tipo_reporte}.</p>",
-                "attachments": [{"filename": os.path.basename(path), "content": contenido_base64}]
-            }
-            response = requests.post("https://api.resend.com/emails", headers=headers, json=data, timeout=30)
-            if response.status_code in (200, 201):
-                Clock.schedule_once(lambda dt: self.aviso(f"¡{tipo_reporte} enviado!", "¡Éxito!"), 0)
-            else:
-                Clock.schedule_once(lambda dt: self.aviso(f"Error: {response.text}", "Error"), 0)
-        except Exception as e:
-            Clock.schedule_once(lambda dt: self.aviso(f"Error al enviar: {e}", "Error"), 0)
-
-if __name__ == '__main__':
-    GastosApp().run()
+                    fila = BoxLayout(size_hint_y=None, height=dp(45
