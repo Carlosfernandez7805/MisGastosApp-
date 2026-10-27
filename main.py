@@ -15,12 +15,10 @@ import urllib.parse
 # =========================================================================
 def escribir_log(mensaje):
     try:
-        # Intentamos guardar en la carpeta de Descargas pública
         ruta_log = "/storage/emulated/0/Download/estado_inicio.txt"
         with open(ruta_log, "a") as f:
             f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensaje}\n")
     except:
-        # Si falla por permisos (Android 11+), al menos lo imprimimos en consola
         try:
             print(f"[LOG] {mensaje}")
         except:
@@ -100,7 +98,7 @@ except Exception as e:
     escribir_log(f"Error cargando fuente NotoEmoji: {e}")
 
 # =========================================================================
-# 👇 CLASE NATIVA PARA EL MICRÓFONO (SPEECH RECOGNIZER) 👇
+# 👇 CLASE NATIVA PARA EL MICRÓFONO (CON RESPALDO INTENT) 👇
 # =========================================================================
 class SpeechRecognizer:
     def __init__(self):
@@ -120,6 +118,7 @@ class SpeechRecognizer:
             self.Intent = autoclass('android.content.Intent')
             self.Locale = autoclass('java.util.Locale')
             
+            # Verificamos si el servicio nativo está disponible
             if self.SpeechRecognizer.isRecognitionAvailable(self.activity):
                 self.recognizer = self.SpeechRecognizer.createSpeechRecognizer(self.activity)
                 self.available = True
@@ -128,68 +127,77 @@ class SpeechRecognizer:
             self.available = False
 
     def start_listening(self, callback):
-        if not self.available:
-            callback(None, "El reconocimiento de voz no está disponible en este dispositivo.")
-            return
-            
         self.callback = callback
         try:
             from jnius import PythonJavaClass, java_method, autoclass
             from android import activity
             
+            # Creamos el Intent de reconocimiento de voz
             self.intent = self.Intent(self.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE_MODEL, self.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE, self.Locale.getDefault())
             self.intent.putExtra(self.RecognizerIntent.EXTRA_PROMPT, "Habla ahora...")
+
+            # Si el servicio nativo está disponible, lo usamos (más rápido)
+            if self.available and self.recognizer:
+                class RecognitionListener(PythonJavaClass):
+                    __javainterfaces__ = ['android/speech/RecognitionListener']
+                    __javacontext__ = 'app'
+                    
+                    def __init__(self, callback):
+                        super().__init__()
+                        self.callback = callback
+                    
+                    @java_method('(Landroid/os/Bundle;)V')
+                    def onReadyForSpeech(self, params): pass
+                    @java_method('()V')
+                    def onBeginningOfSpeech(self): pass
+                    @java_method('(F)V')
+                    def onRmsChanged(self, rmsdB): pass
+                    @java_method('([B)V')
+                    def onBufferReceived(self, buffer): pass
+                    @java_method('()V')
+                    def onEndOfSpeech(self): pass
+                    @java_method('(I)V')
+                    def onError(self, error):
+                        self.callback(None, f"Error de reconocimiento: {error}")
+                    @java_method('(Landroid/os/Bundle;)V')
+                    def onResults(self, results):
+                        try:
+                            matches = results.getStringArrayList(self.SpeechRecognizer.RESULTS_RECOGNITION)
+                            if matches and matches.size() > 0:
+                                self.callback(matches.get(0), None)
+                            else:
+                                self.callback(None, "No se reconoció ninguna palabra.")
+                        except Exception as e:
+                            self.callback(None, str(e))
+                    @java_method('(Landroid/os/Bundle;)V')
+                    def onPartialResults(self, partialResults): pass
+                    @java_method('(Landroid/os/Bundle;)V')
+                    def onEvent(self, eventType, params): pass
+                
+                self.listener = RecognitionListener(callback)
+                self.recognizer.setRecognitionListener(self.listener)
+                self.recognizer.startListening(self.intent)
             
-            class RecognitionListener(PythonJavaClass):
-                __javainterfaces__ = ['android/speech/RecognitionListener']
-                __javacontext__ = 'app'
-                
-                def __init__(self, callback):
-                    super().__init__()
-                    self.callback = callback
-                
-                @java_method('(Landroid/os/Bundle;)V')
-                def onReadyForSpeech(self, params): pass
-                
-                @java_method('()V')
-                def onBeginningOfSpeech(self): pass
-                
-                @java_method('(F)V')
-                def onRmsChanged(self, rmsdB): pass
-                
-                @java_method('([B)V')
-                def onBufferReceived(self, buffer): pass
-                
-                @java_method('()V')
-                def onEndOfSpeech(self): pass
-                
-                @java_method('(I)V')
-                def onError(self, error):
-                    self.callback(None, f"Error de reconocimiento: {error}")
-                
-                @java_method('(Landroid/os/Bundle;)V')
-                def onResults(self, results):
-                    try:
-                        matches = results.getStringArrayList(self.SpeechRecognizer.RESULTS_RECOGNITION)
-                        if matches and matches.size() > 0:
-                            self.callback(matches.get(0), None)
+            # Si el servicio nativo falla, usamos el Intent (abre ventana de Google)
+            else:
+                from android import activity
+                def on_activity_result(requestCode, resultCode, data):
+                    if requestCode == 1002:
+                        if resultCode == -1: # RESULT_OK
+                            results = data.getStringArrayListExtra(self.RecognizerIntent.EXTRA_RESULTS)
+                            if results and results.size() > 0:
+                                callback(results.get(0), None)
+                            else:
+                                callback(None, "No se reconoció ninguna palabra.")
                         else:
-                            self.callback(None, "No se reconoció ninguna palabra.")
-                    except Exception as e:
-                        self.callback(None, str(e))
+                            callback(None, "Reconocimiento cancelado.")
+                        activity.unbind(on_activity_result=on_activity_result)
                 
-                @java_method('(Landroid/os/Bundle;)V')
-                def onPartialResults(self, partialResults): pass
-                
-                @java_method('(Landroid/os/Bundle;)V')
-                def onEvent(self, eventType, params): pass
-            
-            self.listener = RecognitionListener(callback)
-            self.recognizer.setRecognitionListener(self.listener)
-            self.recognizer.startListening(self.intent)
-            
+                activity.bind(on_activity_result=on_activity_result)
+                self.activity.startActivityForResult(self.intent, 1002)
+
         except Exception as e:
             callback(None, f"Error al iniciar: {str(e)}")
 
@@ -956,7 +964,6 @@ class GastosApp(App):
             headers = {'Content-Type': 'application/json'}
             data = {"contents": [{"parts":[{"text": prompt}]}]}
             
-            # LISTA COMPLETA DE MODELOS GEMINI GRATUITOS VIGENTES
             modelos = [
                 "gemini-3.8-flash",
                 "gemini-3.6-flash",
@@ -975,7 +982,6 @@ class GastosApp(App):
                 Clock.schedule_once(lambda dt, m=modelo: setattr(label_respuesta, 'text', f"Conectando con {m}..."), 0)
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={TU_CLAVE_GEMINI_AQUI}"
                 try:
-                    # TIMEOUT DE 10 SEGUNDOS PARA NO ESPERAR DEMASIADO
                     response = requests.post(url, headers=headers, json=data, timeout=10)
                     if response.status_code == 200:
                         json_resp = response.json()
@@ -984,10 +990,8 @@ class GastosApp(App):
                             respuesta_exitosa = True
                             break
                 except requests.exceptions.Timeout:
-                    escribir_log(f"Timeout con modelo {modelo}")
                     continue 
-                except Exception as e:
-                    escribir_log(f"Error con modelo {modelo}: {e}")
+                except Exception:
                     continue 
             if respuesta_exitosa:
                 Clock.schedule_once(lambda dt: setattr(label_respuesta, 'text', texto_final), 0)
