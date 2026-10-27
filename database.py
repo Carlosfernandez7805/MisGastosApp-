@@ -417,6 +417,36 @@ def save_tutorial_shown(db_path):
     conn.commit()
     conn.close()
 
+# ... (al final de tu database.py) ...
+
+def save_user_theme(db_path, is_dark):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users")
+    row = cursor.fetchone()
+    val = 1 if is_dark else 0
+    if row:
+        cursor.execute("UPDATE users SET tema_oscuro = ? WHERE id = ?", (val, row[0]))
+    else:
+        cursor.execute("INSERT INTO users (tema_oscuro) VALUES (?)", (val,))
+    conn.commit()
+    conn.close()
+
+def get_user_theme(db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    # Si la columna no existe, la creamos
+    try:
+        cursor.execute("SELECT tema_oscuro FROM users LIMIT 1")
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row[0]) if row else False
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE users ADD COLUMN tema_oscuro INTEGER DEFAULT 0")
+        conn.commit()
+        conn.close()
+        return False
+
 def get_tutorial_shown(db_path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
