@@ -10,9 +10,6 @@ import time
 import json
 import urllib.parse
 
-# =========================================================================
-# 👇 FUNCIÓN PARA GUARDAR EL REPORTE DE ERRORES EN DESCARGAS 👇
-# =========================================================================
 def escribir_log(mensaje):
     try:
         ruta_log = "/storage/emulated/0/Download/estado_inicio.txt"
@@ -46,7 +43,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 from kivy.uix.spinner import Spinner
 from kivy.uix.image import Image as KivyImage
-from kivy.properties import NumericProperty, StringProperty, ListProperty
+from kivy.properties import NumericProperty, StringProperty, ListProperty, BooleanProperty
 from kivy.resources import resource_add_path
 from kivy.clock import Clock
 from kivy.graphics import Color, Rectangle, Line, Triangle
@@ -69,7 +66,8 @@ from database import (
     save_category_budget, get_category_budget, get_all_category_budgets, get_total_category_expense,
     save_user_email, get_user_email, save_user_salary, get_user_salary, save_user_pin, get_user_pin,
     save_tutorial_shown, get_tutorial_shown,
-    get_all_categories, add_custom_category, delete_category
+    get_all_categories, add_custom_category, delete_category,
+    save_user_theme, get_user_theme # <-- NUEVAS FUNCIONES
 )
 
 export_excel = None
@@ -90,7 +88,6 @@ TU_CLAVE_GEMINI_AQUI = "TU_CLAVE_GEMINI_AQUI"
 URL_FIREBASE = "https://mis-gastos-app-87b40-default-rtdb.firebaseio.com/" 
 # =========================================================================
 
-# 👇 REGISTRAMOS LA NUEVA FUENTE DE EMOJIS 👇
 try:
     ruta_emoji = os.path.join(ruta_de_tu_app, "NotoEmoji-Regular.ttf")
     LabelBase.register(name="NotoEmoji", fn_regular=ruta_emoji)
@@ -98,7 +95,7 @@ except Exception as e:
     escribir_log(f"Error cargando fuente NotoEmoji: {e}")
 
 # =========================================================================
-# 👇 CLASE NATIVA PARA EL MICRÓFONO (CON RESPALDO INTENT) 👇
+# 👇 CLASE NATIVA PARA EL MICRÓFONO (CORREGIDA) 👇
 # =========================================================================
 class SpeechRecognizer:
     def __init__(self):
@@ -109,21 +106,16 @@ class SpeechRecognizer:
         try:
             from jnius import autoclass
             from android import activity
-            
             self.PythonActivity = autoclass('org.kivy.android.PythonActivity')
             self.activity = self.PythonActivity.mActivity
-            
             self.SpeechRecognizer = autoclass('android.speech.SpeechRecognizer')
             self.RecognizerIntent = autoclass('android.speech.RecognizerIntent')
             self.Intent = autoclass('android.content.Intent')
-            self.Locale = autoclass('java.util.Locale')
             
-            # Verificamos si el servicio nativo está disponible
             if self.SpeechRecognizer.isRecognitionAvailable(self.activity):
                 self.recognizer = self.SpeechRecognizer.createSpeechRecognizer(self.activity)
                 self.available = True
         except Exception as e:
-            print(f"Error cargando SpeechRecognizer: {e}")
             self.available = False
 
     def start_listening(self, callback):
@@ -132,13 +124,10 @@ class SpeechRecognizer:
             from jnius import PythonJavaClass, java_method, autoclass
             from android import activity
             
-            # Creamos el Intent de reconocimiento de voz
             self.intent = self.Intent(self.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE_MODEL, self.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            self.intent.putExtra(self.RecognizerIntent.EXTRA_LANGUAGE, self.Locale.getDefault())
             self.intent.putExtra(self.RecognizerIntent.EXTRA_PROMPT, "Habla ahora...")
 
-            # Si el servicio nativo está disponible, lo usamos (más rápido)
             if self.available and self.recognizer:
                 class RecognitionListener(PythonJavaClass):
                     __javainterfaces__ = ['android/speech/RecognitionListener']
@@ -179,13 +168,10 @@ class SpeechRecognizer:
                 self.listener = RecognitionListener(callback)
                 self.recognizer.setRecognitionListener(self.listener)
                 self.recognizer.startListening(self.intent)
-            
-            # Si el servicio nativo falla, usamos el Intent (abre ventana de Google)
             else:
-                from android import activity
                 def on_activity_result(requestCode, resultCode, data):
                     if requestCode == 1002:
-                        if resultCode == -1: # RESULT_OK
+                        if resultCode == -1:
                             results = data.getStringArrayListExtra(self.RecognizerIntent.EXTRA_RESULTS)
                             if results and results.size() > 0:
                                 callback(results.get(0), None)
@@ -197,7 +183,6 @@ class SpeechRecognizer:
                 
                 activity.bind(on_activity_result=on_activity_result)
                 self.activity.startActivityForResult(self.intent, 1002)
-
         except Exception as e:
             callback(None, f"Error al iniciar: {str(e)}")
 
@@ -220,7 +205,6 @@ class BiometricAuth:
             self.Context = autoclass('android.content.Context')
             self.PythonActivity = autoclass('org.kivy.android.PythonActivity')
             self.activity = self.PythonActivity.mActivity
-            
             km = self.activity.getSystemService(self.Context.KEYGUARD_SERVICE)
             if km.isKeyguardSecure():
                 self.disponible = True
@@ -234,14 +218,9 @@ class BiometricAuth:
         try:
             from jnius import autoclass
             from android import activity
-            
             self.KeyguardManager = autoclass('android.app.KeyguardManager')
             km = self.activity.getSystemService(self.Context.KEYGUARD_SERVICE)
-            
-            intent = km.createConfirmDeviceCredentialIntent(
-                "Desbloquear Mis Gastos", 
-                "Usa tu huella o PIN del teléfono"
-            )
+            intent = km.createConfirmDeviceCredentialIntent("Desbloquear Mis Gastos", "Usa tu huella o PIN del teléfono")
             
             def on_activity_result(requestCode, resultCode, data):
                 if requestCode == 1001:
@@ -253,7 +232,6 @@ class BiometricAuth:
             
             activity.bind(on_activity_result=on_activity_result)
             self.activity.startActivityForResult(intent, 1001)
-            
         except Exception as e:
             callback(False)
 # =========================================================================
@@ -265,7 +243,7 @@ BoxLayout:
     spacing: dp(10)
     canvas.before:
         Color:
-            rgba: (0.06, 0.09, 0.16, 1) 
+            rgba: app.color_fondo
         Rectangle:
             pos: self.pos
             size: self.size
@@ -283,11 +261,31 @@ BoxLayout:
             text: '[b]Mis Gastos[/b]'
             markup: True
             font_size: '20sp'
-            color: (0.97, 0.98, 0.99, 1)
+            color: app.color_texto
             halign: 'left'
             valign: 'middle'
             text_size: self.size
         
+        # BOTÓN DE MODO OSCURO / CLARO (NUEVO)
+        Button:
+            text: app.icono_tema
+            markup: True
+            size_hint_x: None
+            width: dp(45)
+            font_size: '22sp'
+            color: (1, 1, 1, 1)
+            background_normal: ''
+            background_color: 0, 0, 0, 0
+            on_release: app.cambiar_tema()
+            canvas.before:
+                Color:
+                    rgba: app.color_boton_sec
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(8)]
+        
+        # BOTÓN DE CANDADO
         Button:
             text: '[font=NotoEmoji]🔒[/font]'
             markup: True
@@ -300,7 +298,7 @@ BoxLayout:
             on_release: app.configurar_pin()
             canvas.before:
                 Color:
-                    rgba: (0.3, 0.35, 0.45, 1)
+                    rgba: app.color_boton_sec
                 RoundedRectangle:
                     pos: self.pos
                     size: self.size
@@ -317,7 +315,7 @@ BoxLayout:
             on_release: app.abrir_configuracion_salario()
             canvas.before:
                 Color:
-                    rgba: (0.3, 0.35, 0.45, 1)
+                    rgba: app.color_boton_sec
                 RoundedRectangle:
                     pos: self.pos
                     size: self.size
@@ -334,7 +332,7 @@ BoxLayout:
             on_release: app.abrir_configuracion_correo()
             canvas.before:
                 Color:
-                    rgba: (0.3, 0.35, 0.45, 1)
+                    rgba: app.color_boton_sec
                 RoundedRectangle:
                     pos: self.pos
                     size: self.size
@@ -348,7 +346,7 @@ BoxLayout:
         spacing: dp(5)
         canvas.before:
             Color:
-                rgba: (0.12, 0.16, 0.22, 1)
+                rgba: app.color_panel
             RoundedRectangle:
                 pos: self.pos
                 size: self.size
@@ -364,8 +362,8 @@ BoxLayout:
                 text: 'Categoría: General'
                 values: app.lista_categorias
                 background_normal: ''
-                background_color: (0.3, 0.35, 0.45, 1)
-                color: (1, 1, 1, 1)
+                background_color: app.color_boton_sec
+                color: app.color_texto
                 on_text: self.text = 'Categoría: ' + self.text if not self.text.startswith('Categoría:') else self.text
             
             Button:
@@ -376,7 +374,7 @@ BoxLayout:
                 font_size: '20sp'
                 color: (1, 1, 1, 1) 
                 background_normal: ''
-                background_color: (0.4, 0.45, 0.55, 1)
+                background_color: app.color_boton_sec
                 on_release: app.abrir_gestion_categorias()
                 
             TextInput:
@@ -385,8 +383,8 @@ BoxLayout:
                 hint_text_color: (0.6, 0.6, 0.6, 1)
                 multiline: False
                 background_normal: ''
-                background_color: (0.2, 0.25, 0.3, 1)
-                foreground_color: (1, 1, 1, 1)
+                background_color: app.color_input
+                foreground_color: app.color_texto_input
                 padding: dp(4)
                 size_hint_x: 0.35
                 
@@ -411,8 +409,8 @@ BoxLayout:
                 hint_text_color: (0.5, 0.5, 0.5, 1)
                 multiline: True
                 background_normal: ''
-                background_color: (1, 1, 1, 1)
-                foreground_color: (0.06, 0.09, 0.16, 1)
+                background_color: app.color_input
+                foreground_color: app.color_texto_input
                 padding: dp(8)
                 
             Button:
@@ -423,11 +421,11 @@ BoxLayout:
                 font_size: '24sp'
                 color: (1, 1, 1, 1) 
                 background_normal: ''
-                background_color: 0, 0, 0, 0
+                background_color: app.color_boton_sec
                 on_release: app.activar_microfono()
                 canvas.before:
                     Color:
-                        rgba: (0.3, 0.35, 0.45, 1)
+                        rgba: app.color_boton_sec
                     RoundedRectangle:
                         pos: self.pos
                         size: self.size
@@ -468,7 +466,7 @@ BoxLayout:
         spacing: dp(5)
         canvas.before:
             Color:
-                rgba: (0.12, 0.16, 0.22, 1)
+                rgba: app.color_panel
             RoundedRectangle:
                 pos: self.pos
                 size: self.size
@@ -477,7 +475,7 @@ BoxLayout:
         Label:
             text: '[b]Hoy[/b]\\n' + app.formato(app.total_hoy)
             markup: True
-            color: (0.97, 0.98, 0.99, 1)
+            color: app.color_texto
             halign: 'center'
             valign: 'middle'
             text_size: self.size
@@ -488,7 +486,7 @@ BoxLayout:
             Label:
                 text: '[b]Mes[/b]'
                 markup: True
-                color: (0.97, 0.98, 0.99, 1)
+                color: app.color_texto
                 size_hint_y: None
                 height: dp(20)
                 font_size: '11sp'
@@ -499,8 +497,8 @@ BoxLayout:
                 text: 'Mes Actual'
                 values: ('Mes Actual',)
                 background_normal: ''
-                background_color: (0.3, 0.35, 0.45, 1)
-                color: (1, 1, 1, 1)
+                background_color: app.color_boton_sec
+                color: app.color_texto
                 font_size: '12sp'
                 on_text: app.cambiar_mes(self.text)
 
@@ -509,7 +507,7 @@ BoxLayout:
             Label:
                 text: '[b]Filtro[/b]'
                 markup: True
-                color: (0.97, 0.98, 0.99, 1)
+                color: app.color_texto
                 size_hint_y: None
                 height: dp(20)
                 font_size: '11sp'
@@ -520,7 +518,7 @@ BoxLayout:
                 markup: True
                 font_size: '14sp'
                 background_normal: ''
-                background_color: (0.2, 0.4, 0.6, 1)
+                background_color: app.color_boton_sec
                 color: (1, 1, 1, 1) 
                 on_release: app.abrir_filtro_fechas()
 
@@ -534,7 +532,7 @@ BoxLayout:
         spacing: dp(5)
         canvas.before:
             Color:
-                rgba: (0.12, 0.16, 0.22, 1)
+                rgba: app.color_panel
             RoundedRectangle:
                 pos: self.pos
                 size: self.size
@@ -623,8 +621,8 @@ BoxLayout:
             hint_text_color: (0.5, 0.5, 0.5, 1)
             multiline: False
             background_normal: ''
-            background_color: (1, 1, 1, 0.1)
-            foreground_color: (1, 1, 1, 1)
+            background_color: app.color_input
+            foreground_color: app.color_texto_input
             padding: dp(4)
             on_text: app.buscar_gastos(self.text)
         
@@ -776,6 +774,17 @@ class GastosApp(App):
     altura_salario = NumericProperty(0)
     opacidad_salario = NumericProperty(0)
     lista_categorias = ListProperty(['General', 'Comida', 'Transporte', 'Servicios', 'Salud', 'Ocio', 'Otros'])
+    
+    # VARIABLES DEL TEMA
+    tema_oscuro = BooleanProperty(False)
+    color_fondo = ListProperty([0.06, 0.09, 0.16, 1])
+    color_panel = ListProperty([0.12, 0.16, 0.22, 1])
+    color_texto = ListProperty([0.97, 0.98, 0.99, 1])
+    color_boton_sec = ListProperty([0.3, 0.35, 0.45, 1])
+    color_input = ListProperty([1, 1, 1, 1])
+    color_texto_input = ListProperty([0.06, 0.09, 0.16, 1])
+    icono_tema = StringProperty("[font=NotoEmoji]☀️[/font]")
+
     _stt_clock = None
     mes_actual_seleccionado = None
     filtro_inicio = None
@@ -792,11 +801,38 @@ class GastosApp(App):
         self.speech = SpeechRecognizer()
         try:
             init_db(self.db_path)
+            # Cargar tema guardado
+            tema = get_user_theme(self.db_path)
+            self.aplicar_tema(tema)
             escribir_log("Base de datos OK")
             return Builder.load_string(KV)
         except Exception as e:
             escribir_log(f"Error en build: {traceback.format_exc()}")
             return Label(text=f"Error Crítico:\n{e}")
+
+    def aplicar_tema(self, oscuro):
+        self.tema_oscuro = oscuro
+        if oscuro:
+            self.color_fondo = [0.08, 0.08, 0.1, 1]
+            self.color_panel = [0.15, 0.15, 0.18, 1]
+            self.color_texto = [0.95, 0.95, 0.95, 1]
+            self.color_boton_sec = [0.25, 0.25, 0.3, 1]
+            self.color_input = [0.2, 0.2, 0.25, 1]
+            self.color_texto_input = [1, 1, 1, 1]
+            self.icono_tema = "[font=NotoEmoji]☀️[/font]"
+        else:
+            self.color_fondo = [0.06, 0.09, 0.16, 1]
+            self.color_panel = [0.12, 0.16, 0.22, 1]
+            self.color_texto = [0.97, 0.98, 0.99, 1]
+            self.color_boton_sec = [0.3, 0.35, 0.45, 1]
+            self.color_input = [1, 1, 1, 1]
+            self.color_texto_input = [0.06, 0.09, 0.16, 1]
+            self.icono_tema = "[font=NotoEmoji]🌙[/font]"
+
+    def cambiar_tema(self):
+        self.tema_oscuro = not self.tema_oscuro
+        self.aplicar_tema(self.tema_oscuro)
+        save_user_theme(self.db_path, self.tema_oscuro)
 
     def on_start(self):
         try:
@@ -807,7 +843,6 @@ class GastosApp(App):
             request_permissions(perms)
         except Exception as e:
             escribir_log(f"Error pidiendo permisos: {e}")
-            
         Clock.schedule_once(self.iniciar_app, 0.5)
 
     def iniciar_app(self, dt):
