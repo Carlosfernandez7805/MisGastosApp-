@@ -30,14 +30,17 @@ jobs:
         run: |
           sed -i 's/TU_CLAVE_GEMINI_AQUI = ".*"/TU_CLAVE_GEMINI_AQUI = "${{ secrets.GEMINI_API_KEY }}"/g' main.py
           
+      # 4. Instalar dependencias (AQUÍ ESTÁ LA CORRECCIÓN)
       - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
-          pip3 install --user --upgrade "pip<24.0" "setuptools<70" wheel
-          pip3 install --user --upgrade buildozer cython virtualenv
+          # Usamos 'python3 -m pip' en lugar de 'pip3' para evitar el error roto
+          python3 -m pip install --user --upgrade pip
+          python3 -m pip install --user --upgrade "pip<24.0" "setuptools<70" wheel
+          python3 -m pip install --user --upgrade buildozer cython virtualenv
           
-      # 4. Aceptar Licencias del SDK
+      # 5. Aceptar Licencias del SDK
       - name: Aceptar Licencias y Preparar SDK
         run: |
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
@@ -51,7 +54,7 @@ jobs:
             "$SDKMANAGER" "build-tools;37.0.0" "platform-tools" "platforms;android-33" || true
           fi
           
-      # 5. Compilar
+      # 6. Compilar
       - name: Build with Buildozer
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
@@ -60,7 +63,7 @@ jobs:
           export APP_ANDROID_ACCEPT_SDK_LICENSE=1
           yes | buildozer -v android debug
           
-      # 6. Subir el APK
+      # 7. Subir el APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
