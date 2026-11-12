@@ -655,7 +655,6 @@ class PieChart(Widget):
         self.canvas.clear()
         if not self.data: return
         
-        # Filtrar valores válidos
         valid_data = [(label, val, color) for label, val, color in self.data if isinstance(val, (int, float)) and val > 0]
         if not valid_data: return
         
@@ -710,7 +709,6 @@ class BarChart(Widget):
             Line(points=[self.x, self.y, self.right, self.y], width=1.5)
             
             for i, (label, value, color) in enumerate(self.data):
-                # Proteger contra colores en tupla
                 c = list(color)
                 Color(c[0], c[1], c[2], c[3] if len(c) > 3 else 1)
                 
@@ -1066,10 +1064,10 @@ class GastosApp(App):
             
             if now.month == 1: 
                 mes_anterior_str = f"{now.year - 1}-12"
-                nombre_mes_ant = "Dic"
+                nombre_mes_anterior = "Dic"
             else: 
                 mes_anterior_str = f"{now.year}-{now.month - 1:02d}"
-                nombre_mes_ant = now.replace(month=now.month - 1).strftime('%b')
+                nombre_mes_anterior = now.replace(month=now.month - 1).strftime('%b')
                 
             total_mes_anterior = get_totals_for_month(self.db_path, mes_anterior_str)
             if total_mes_anterior is None: total_mes_anterior = 0
@@ -1113,7 +1111,6 @@ class GastosApp(App):
             datos = get_expenses_by_category_month(self.db_path, year_month)
             if not datos: self.aviso("No hay gastos registrados.", "Sin datos"); return
             
-            # Filtrar datos válidos (que no sean None)
             datos_validos = [(cat, monto) for cat, monto in datos if monto is not None and monto > 0]
             if not datos_validos:
                 self.aviso("No hay gastos válidos registrados.", "Sin datos")
