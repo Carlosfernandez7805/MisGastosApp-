@@ -646,21 +646,41 @@ BoxLayout:
 
 class PieChart(Widget):
     def __init__(self, data, **kwargs):
-        super().__init__(**kwargs); self.data = data; self.bind(pos=self.redraw, size=self.redraw); self.redraw()
+        super().__init__(**kwargs)
+        self.data = data
+        self.bind(pos=self.redraw, size=self.redraw)
+        self.redraw()
+
     def redraw(self, *args):
         self.canvas.clear()
         if not self.data: return
-        total = sum(item[1] for item in self.data)
+        
+        # Filtrar valores válidos
+        valid_data = [(label, val, color) for label, val, color in self.data if isinstance(val, (int, float)) and val > 0]
+        if not valid_data: return
+        
+        total = sum(item[1] for item in valid_data)
         if total == 0: return
-        cx, cy = self.center_x, self.center_y; radius = min(self.width, self.height) / 2 * 0.85; start_angle = 0
+        
+        cx, cy = self.center_x, self.center_y
+        radius = min(self.width, self.height) / 2 * 0.85
+        start_angle = 0
+        
         with self.canvas:
-            Color(0.2, 0.2, 0.2, 1); Line(circle=(cx, cy, radius), width=2)
-            for label, value, color in self.data:
-                angle = (value / total) * 2 * math.pi; end_angle = start_angle + angle; Color(*color)
+            Color(0.2, 0.2, 0.2, 1)
+            Line(circle=(cx, cy, radius), width=2)
+            for label, value, color in valid_data:
+                angle = (value / total) * 2 * math.pi
+                end_angle = start_angle + angle
+                Color(*color)
                 segments = max(int(angle * 180 / math.pi), 2)
                 for i in range(segments):
-                    a1 = start_angle + (end_angle - start_angle) * i / segments; a2 = start_angle + (end_angle - start_angle) * (i + 1) / segments
-                    x1 = cx + radius * math.cos(a1); y1 = cy + radius * math.sin(a1); x2 = cx + radius * math.cos(a2); y2 = cy + radius * math.sin(a2)
+                    a1 = start_angle + (end_angle - start_angle) * i / segments
+                    a2 = start_angle + (end_angle - start_angle) * (i + 1) / segments
+                    x1 = cx + radius * math.cos(a1)
+                    y1 = cy + radius * math.sin(a1)
+                    x2 = cx + radius * math.cos(a2)
+                    y2 = cy + radius * math.sin(a2)
                     Triangle(points=[cx, cy, x1, y1, x2, y2])
                 start_angle = end_angle
 
@@ -676,7 +696,10 @@ class BarChart(Widget):
         if not self.data or len(self.data) == 0: return
         if self.width < 50 or self.height < 50: return 
         
-        max_val = max([d[1] for d in self.data])
+        valores = [d[1] for d in self.data if isinstance(d[1], (int, float))]
+        if not valores: return
+        
+        max_val = max(valores)
         if max_val <= 0: max_val = 1
         
         bar_width = self.width / (len(self.data) * 1.5)
@@ -687,10 +710,15 @@ class BarChart(Widget):
             Line(points=[self.x, self.y, self.right, self.y], width=1.5)
             
             for i, (label, value, color) in enumerate(self.data):
-                Color(*color)
+                # Proteger contra colores en tupla
+                c = list(color)
+                Color(c[0], c[1], c[2], c[3] if len(c) > 3 else 1)
+                
+                if value is None or not isinstance(value, (int, float)): value = 0
                 bar_height = (value / max_val) * (self.height * 0.8)
                 x = self.x + spacing + (i * (bar_width + spacing))
                 y = self.y
+                if bar_height < 0: bar_height = 0 
                 Rectangle(pos=(x, y), size=(bar_width, bar_height))
 
 def parse_expense(text):
@@ -997,7 +1025,9 @@ class GastosApp(App):
         btn_aplicar.bind(on_release=aplicar); btn_borrar.bind(on_release=borrar); popup.open()
 
     @staticmethod
-    def formato(value): return '$ ' + f'{int(round(value)):,}'.replace(',', '.')
+    def formato(value):
+        if value is None: value = 0
+        return '$ ' + f'{int(round(value)):,}'.replace(',', '.')
 
     def aviso(self, mensaje, titulo='Mi Control de Gastos'):
         lbl = Label(text=mensaje, halign='center', valign='middle'); lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
@@ -1028,55 +1058,97 @@ class GastosApp(App):
         self.actualizar_pantalla()
 
     def mostrar_comparacion(self):
-        now = datetime.now(); mes_actual_str = now.strftime('%Y-%m'); total_mes_actual = get_totals_for_month(self.db_path, mes_actual_str)
-        if now.month == 1: mes_anterior_str = f"{now.year - 1}-12"; nombre_mes_ant = "Dic"
-        else: mes_anterior_str = f"{now.year}-{now.month - 1:02d}"; nombre_mes_ant = now.replace(month=now.month - 1).strftime('%b')
-        total_mes_anterior = get_totals_for_month(self.db_path, mes_anterior_str); nombre_mes_act = now.strftime('%b')
-
-        if total_mes_actual == 0 and total_mes_anterior == 0:
-            self.aviso("No hay gastos registrados en ninguno de los dos meses.", "Sin datos"); return
-
-        datos_barras = [(nombre_mes_anterior, total_mes_anterior, (0.8, 0.3, 0.3, 1)), (nombre_mes_act, total_mes_actual, (0.2, 0.6, 0.8, 1))]
-        contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(15))
-        contenido.add_widget(Label(text="[b]Comparación de Gastos[/b]", markup=True, size_hint_y=None, height=dp(40), font_size='18sp', color=(1,1,1,1)))
-        contenido.add_widget(BarChart(datos_barras, size_hint_y=0.6))
-        
-        leyenda = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
-        for label, val, color in datos_barras:
-            box = BoxLayout(orientation='vertical')
-            box.add_widget(Label(text=f"[b]{label}[/b]", markup=True, color=color))
-            box.add_widget(Label(text=self.formato(val), color=(1,1,1,1)))
-            leyenda.add_widget(box)
+        try:
+            now = datetime.now()
+            mes_actual_str = now.strftime('%Y-%m')
+            total_mes_actual = get_totals_for_month(self.db_path, mes_actual_str)
+            if total_mes_actual is None: total_mes_actual = 0
             
-        contenido.add_widget(leyenda); Popup(title='Comparación Mensual', content=contenido, size_hint=(0.9, 0.7)).open()
+            if now.month == 1: 
+                mes_anterior_str = f"{now.year - 1}-12"
+                nombre_mes_ant = "Dic"
+            else: 
+                mes_anterior_str = f"{now.year}-{now.month - 1:02d}"
+                nombre_mes_ant = now.replace(month=now.month - 1).strftime('%b')
+                
+            total_mes_anterior = get_totals_for_month(self.db_path, mes_anterior_str)
+            if total_mes_anterior is None: total_mes_anterior = 0
+            
+            nombre_mes_act = now.strftime('%b')
+
+            if total_mes_actual == 0 and total_mes_anterior == 0:
+                self.aviso("No hay gastos registrados en ninguno de los dos meses.", "Sin datos")
+                return
+
+            color_ant = [0.8, 0.3, 0.3, 1]
+            color_act = [0.2, 0.6, 0.8, 1]
+            
+            datos_barras = [
+                (nombre_mes_anterior, total_mes_anterior, color_ant), 
+                (nombre_mes_act, total_mes_actual, color_act)
+            ]
+            
+            contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(15))
+            contenido.add_widget(Label(text="[b]Comparación de Gastos[/b]", markup=True, size_hint_y=None, height=dp(40), font_size='18sp', color=[1, 1, 1, 1]))
+            contenido.add_widget(BarChart(datos_barras, size_hint_y=0.6))
+            
+            leyenda = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(50), spacing=dp(10))
+            for label, val, color in datos_barras:
+                box = BoxLayout(orientation='vertical')
+                box.add_widget(Label(text=f"[b]{label}[/b]", markup=True, color=color))
+                box.add_widget(Label(text=self.formato(val), color=[1, 1, 1, 1]))
+                leyenda.add_widget(box)
+                
+            contenido.add_widget(leyenda)
+            Popup(title='Comparación Mensual', content=contenido, size_hint=(0.9, 0.7)).open()
+            
+        except Exception as e:
+            self.aviso(f"Error al comparar:\n{str(e)}", "Error Detectado")
 
     def mostrar_grafico(self):
-        if self.mes_actual_seleccionado: year_month = self.mes_actual_seleccionado; titulo_mes = year_month
-        else: now = datetime.now(); year_month = now.strftime('%Y-%m'); titulo_mes = "Este mes"
-        datos = get_expenses_by_category_month(self.db_path, year_month)
-        if not datos: self.aviso("No hay gastos registrados.", "Sin datos"); return
-        if len(datos) == 1: self.aviso(f"Todos tus gastos están en '{datos[0][0]}'.", "Solo una categoría")
-        total_mes = sum([fila[1] for fila in datos])
-        colores = [(0.9, 0.3, 0.3, 1), (0.3, 0.7, 0.9, 1), (0.3, 0.9, 0.5, 1), (0.9, 0.8, 0.3, 1), (0.7, 0.4, 0.9, 1), (0.9, 0.5, 0.1, 1)]
-        datos_grafico = [(cat, monto, colores[i % len(colores)]) for i, (cat, monto) in enumerate(datos)]
-        contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(15))
-        contenido.add_widget(Label(text=f"[b]Gastos de {titulo_mes}[/b]", markup=True, size_hint_y=None, height=dp(40), font_size='18sp', color=(1,1,1,1)))
-        contenido.add_widget(PieChart(datos_grafico, size_hint_y=0.6))
-        scroll_leyenda = ScrollView(size_hint_y=0.4); leyenda = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(8)); leyenda.bind(minimum_height=leyenda.setter('height'))
-        for cat, monto, color_actual in datos_grafico:
-            porcentaje = (monto / total_mes) * 100
-            fila = BoxLayout(size_hint_y=None, height=dp(25), spacing=dp(10)); cuadro = Widget(size_hint_x=None, width=dp(20), height=dp(20))
-            with cuadro.canvas: Color(*color_actual); rect = Rectangle(pos=cuadro.pos, size=cuadro.size)
-            cuadro.bind(pos=lambda inst, val, r=rect: setattr(r, 'pos', val)); cuadro.bind(size=lambda inst, val, r=rect: setattr(r, 'size', val))
-            lbl = Label(text=f"{cat}: {self.formato(monto)} ({porcentaje:.1f}%)", halign='left', valign='middle', color=(1,1,1,1)); lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
-            fila.add_widget(cuadro); fila.add_widget(lbl); leyenda.add_widget(fila)
-        scroll_leyenda.add_widget(leyenda); contenido.add_widget(scroll_leyenda)
-        Popup(title='Estadísticas', content=contenido, size_hint=(0.95, 0.8)).open()
+        try:
+            if self.mes_actual_seleccionado: year_month = self.mes_actual_seleccionado; titulo_mes = year_month
+            else: now = datetime.now(); year_month = now.strftime('%Y-%m'); titulo_mes = "Este mes"
+            
+            datos = get_expenses_by_category_month(self.db_path, year_month)
+            if not datos: self.aviso("No hay gastos registrados.", "Sin datos"); return
+            
+            # Filtrar datos válidos (que no sean None)
+            datos_validos = [(cat, monto) for cat, monto in datos if monto is not None and monto > 0]
+            if not datos_validos:
+                self.aviso("No hay gastos válidos registrados.", "Sin datos")
+                return
+                
+            if len(datos_validos) == 1: self.aviso(f"Todos tus gastos están en '{datos_validos[0][0]}'.", "Solo una categoría")
+            
+            total_mes = sum([fila[1] for fila in datos_validos])
+            colores = [[0.9, 0.3, 0.3, 1], [0.3, 0.7, 0.9, 1], [0.3, 0.9, 0.5, 1], [0.9, 0.8, 0.3, 1], [0.7, 0.4, 0.9, 1], [0.9, 0.5, 0.1, 1]]
+            datos_grafico = [(cat, monto, colores[i % len(colores)]) for i, (cat, monto) in enumerate(datos_validos)]
+            
+            contenido = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(15))
+            contenido.add_widget(Label(text=f"[b]Gastos de {titulo_mes}[/b]", markup=True, size_hint_y=None, height=dp(40), font_size='18sp', color=[1,1,1,1]))
+            contenido.add_widget(PieChart(datos_grafico, size_hint_y=0.6))
+            
+            scroll_leyenda = ScrollView(size_hint_y=0.4); leyenda = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(8)); leyenda.bind(minimum_height=leyenda.setter('height'))
+            for cat, monto, color_actual in datos_grafico:
+                porcentaje = (monto / total_mes) * 100
+                fila = BoxLayout(size_hint_y=None, height=dp(25), spacing=dp(10)); cuadro = Widget(size_hint_x=None, width=dp(20), height=dp(20))
+                with cuadro.canvas: 
+                    Color(*color_actual)
+                    rect = Rectangle(pos=cuadro.pos, size=cuadro.size)
+                cuadro.bind(pos=lambda inst, val, r=rect: setattr(r, 'pos', val)); cuadro.bind(size=lambda inst, val, r=rect: setattr(r, 'size', val))
+                lbl = Label(text=f"{cat}: {self.formato(monto)} ({porcentaje:.1f}%)", halign='left', valign='middle', color=[1,1,1,1]); lbl.bind(size=lambda inst, val: setattr(inst, 'text_size', val))
+                fila.add_widget(cuadro); fila.add_widget(lbl); leyenda.add_widget(fila)
+                
+            scroll_leyenda.add_widget(leyenda); contenido.add_widget(scroll_leyenda)
+            Popup(title='Estadísticas', content=contenido, size_hint=(0.95, 0.8)).open()
+        except Exception as e:
+            self.aviso(f"Error al mostrar gráfico:\n{str(e)}", "Error")
 
     def abrir_configuracion_salario(self):
         contenido = BoxLayout(orientation='vertical', padding=dp(10), spacing=dp(8))
         salario_actual = get_user_salary(self.db_path)
-        entrada_salario = TextInput(text=str(int(salario_actual)) if salario_actual > 0 else "", hint_text="Ej: 1500000", multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
+        entrada_salario = TextInput(text=str(int(salario_actual)) if salario_actual and salario_actual > 0 else "", hint_text="Ej: 1500000", multiline=False, input_filter='int', size_hint_y=None, height=dp(40))
         btn_guardar = Button(text="[font=NotoEmoji]💾[/font] Guardar Salario", markup=True, size_hint_y=None, height=dp(45), font_size='16sp', background_color=(0.06, 0.72, 0.5, 1), color=(1,1,1,1))
         contenido.add_widget(Label(text="Tu salario mensual:")); contenido.add_widget(entrada_salario); contenido.add_widget(btn_guardar)
         popup = Popup(title='Mi Salario', content=contenido, size_hint=(0.9, 0.4))
@@ -1093,8 +1165,10 @@ class GastosApp(App):
         def recargar_lista():
             lista.clear_widgets(); presupuestos = get_all_category_budgets(self.db_path); mes_actual = datetime.now().strftime('%Y-%m')
             for cat, monto_limite in presupuestos:
-                gastado = get_total_category_expense(self.db_path, mes_actual, cat); porcentaje = (gastado / monto_limite) * 100 if monto_limite > 0 else 0
-                color = (0.9, 0.3, 0.3, 1) if gastado > monto_limite else (0.2, 0.9, 0.5, 1)
+                gastado = get_total_category_expense(self.db_path, mes_actual, cat)
+                if gastado is None: gastado = 0
+                porcentaje = (gastado / monto_limite) * 100 if monto_limite > 0 else 0
+                color = [0.9, 0.3, 0.3, 1] if gastado > monto_limite else [0.2, 0.9, 0.5, 1]
                 texto = f"[b]{cat}[/b]: Límite {self.formato(monto_limite)}\nGastado {self.formato(gastado)} ({porcentaje:.1f}%)"
                 lbl = Label(text=texto, markup=True, halign='left', valign='middle', size_hint_y=None, height=dp(45), color=color, text_size=(dp(300), None)); lista.add_widget(lbl)
         recargar_lista(); scroll.add_widget(lista); contenido.add_widget(scroll)
@@ -1113,6 +1187,7 @@ class GastosApp(App):
         def recargar_lista():
             lista.clear_widgets(); mes_actual = datetime.now().strftime('%Y-%m')
             for i_id, desc, amount, date_str in get_all_incomes_month(self.db_path, mes_actual):
+                if amount is None: amount = 0
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
                 lbl = Label(text=f"{desc} - {self.formato(amount)}", halign='left', valign='middle', color=(0.2, 0.9, 0.5, 1), text_size=(dp(200), None))
                 btn_del = Button(text="[font=NotoEmoji]🗑️[/font]", markup=True, size_hint_x=None, width=dp(40), font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
@@ -1147,14 +1222,18 @@ class GastosApp(App):
         if gastos_guardados > 0:
             self.root.ids.gasto.text = ''; self.root.ids.estado.text = f'Guardados {gastos_guardados} gastos.'; self.subir_a_la_nube() 
             limite_cat = get_category_budget(self.db_path, categoria)
-            if limite_cat > 0 and moneda == 'COP':
+            if limite_cat and limite_cat > 0 and moneda == 'COP':
                 mes_actual = datetime.now().strftime('%Y-%m'); gastado_cat = get_total_category_expense(self.db_path, mes_actual, categoria)
+                if gastado_cat is None: gastado_cat = 0
                 if gastado_cat > limite_cat: self.aviso(f"¡Límite superado en {categoria}!\nLímite: {self.formato(limite_cat)}", "Excedido")
                 elif gastado_cat >= limite_cat * 0.9: self.aviso(f"¡Cuidado con {categoria}!\nHas usado el 90% de tu límite.", "Cerca")
             salario = get_user_salary(self.db_path)
-            if salario > 0 and total_guardado > 0:
+            if salario and salario > 0 and total_guardado > 0:
                 now = datetime.now(); total_actual_mes = totals_for_period(self.db_path, now.date().replace(day=1).isoformat(), now.date().isoformat())
+                if total_actual_mes is None: total_actual_mes = 0
                 total_ahorrado = get_total_saved(self.db_path); ingresos_extra = get_income_for_month(self.db_path, now.strftime('%Y-%m'))
+                if total_ahorrado is None: total_ahorrado = 0
+                if ingresos_extra is None: ingresos_extra = 0
                 restante = salario + ingresos_extra - total_actual_mes - total_ahorrado
                 if restante < 0: self.aviso(f"¡ALERTA DE SOBREGIRO!\nDéficit: {self.formato(abs(restante))}", "Sobregirado")
                 elif restante <= (salario * 0.1): self.aviso(f"¡Cuidado!\nSaldo: {self.formato(restante)}", "Límite")
@@ -1164,16 +1243,26 @@ class GastosApp(App):
     def actualizar_pantalla(self):
         if not self.root or 'movimientos' not in self.root.ids: return
         now = datetime.now(); self.total_hoy = totals_for_period(self.db_path, now.date().isoformat(), now.date().isoformat())
+        if self.total_hoy is None: self.total_hoy = 0
+        
         if self.filtro_inicio and self.filtro_fin:
             total_mes_vista = totals_for_period(self.db_path, self.filtro_inicio, self.filtro_fin)
+            if total_mes_vista is None: total_mes_vista = 0
             rows = get_expenses_for_date_range(self.db_path, self.filtro_inicio, self.filtro_fin, "")
             self.root.ids.mes_spinner.text = 'Mes Actual'; self.mes_actual_seleccionado = None
         else:
             if self.mes_actual_seleccionado: year_month = self.mes_actual_seleccionado; total_mes_vista = get_totals_for_month(self.db_path, year_month)
             else: year_month = now.strftime('%Y-%m'); total_mes_vista = totals_for_period(self.db_path, now.date().replace(day=1).isoformat(), now.date().isoformat())
+            if total_mes_vista is None: total_mes_vista = 0
             rows = get_expenses_for_month(self.db_path, year_month, "")
 
-        salario = get_user_salary(self.db_path); total_ahorrado = get_total_saved(self.db_path); ingresos_extra = get_income_for_month(self.db_path, year_month)
+        salario = get_user_salary(self.db_path)
+        if salario is None: salario = 0
+        total_ahorrado = get_total_saved(self.db_path)
+        if total_ahorrado is None: total_ahorrado = 0
+        ingresos_extra = get_income_for_month(self.db_path, year_month)
+        if ingresos_extra is None: ingresos_extra = 0
+        
         if salario > 0 or ingresos_extra > 0:
             self.altura_salario = dp(60); self.opacidad_salario = 1.0; restante = salario + ingresos_extra - total_mes_vista - total_ahorrado
             if restante < 0: self.texto_saldo = f"[b]Saldo: -{self.formato(abs(restante))}[/b]\n(¡Sobregirado!)"; self.color_saldo = [0.9, 0.2, 0.2, 1]
@@ -1187,6 +1276,7 @@ class GastosApp(App):
         
         for row in rows:
             expense_id, created_at, description, amount, category, currency = row[:6]
+            if amount is None: amount = 0
             moneda_str = f" ({currency})" if currency != 'COP' else ""
             text = f'[{category}] {description} | {self.formato(amount)}{moneda_str}'
             btn = Button(text=text, markup=True, size_hint_y=None, background_normal='', background_color=(0.12, 0.16, 0.22, 1), color=(0.88, 0.92, 0.95, 1), halign='left', valign='middle', padding=(dp(6), 0))
@@ -1244,6 +1334,7 @@ class GastosApp(App):
         def recargar_lista():
             lista.clear_widgets()
             for r_id, desc, amount, cat, day in get_recurring_expenses(self.db_path):
+                if amount is None: amount = 0
                 fila = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
                 lbl = Label(text=f"Día {day}: {desc} - {self.formato(amount)}", halign='left', valign='middle', text_size=(dp(250), None))
                 btn_del = Button(text="[font=NotoEmoji]🗑️[/font]", markup=True, size_hint_x=None, width=dp(40), font_size='16sp', background_color=(0.8, 0.2, 0.2, 1), color=(1,1,1,1))
@@ -1268,6 +1359,8 @@ class GastosApp(App):
         def recargar_lista():
             lista.clear_widgets()
             for g_id, name, target, saved in get_savings_goals(self.db_path):
+                if target is None: target = 0
+                if saved is None: saved = 0
                 fila = BoxLayout(orientation='vertical', size_hint_y=None, height=dp(70), spacing=dp(2))
                 porcentaje = (saved / target) * 100 if target > 0 else 0
                 lbl = Label(text=f"{name} ({porcentaje:.0f}%)\nAhorrado: {self.formato(saved)} / {self.formato(target)}", halign='left', valign='middle', size_hint_y=None, height=dp(40), text_size=(dp(250), None))
@@ -1300,6 +1393,8 @@ class GastosApp(App):
             scroll = ScrollView(size_hint_y=0.5); lista = BoxLayout(orientation='vertical', size_hint_y=None, spacing=dp(5)); lista.bind(minimum_height=lista.setter('height'))
             def recargar_lista():
                 lista.clear_widgets(); total_me_deben = get_total_debts(self.db_path, 'me_deben'); total_yo_debo = get_total_debts(self.db_path, 'yo_debo')
+                if total_me_deben is None: total_me_deben = 0
+                if total_yo_debo is None: total_yo_debo = 0
                 lbl_me_deben.text = f"[b]Me deben: {self.formato(total_me_deben)}[/b]"; lbl_yo_debo.text = f"[b]Yo debo: {self.formato(total_yo_debo)}[/b]"
                 deudas = get_debts(self.db_path, "pending")
                 for d_id, person, amount, type_d, desc in deudas:
@@ -1344,12 +1439,15 @@ class GastosApp(App):
             try:
                 mes_actual = datetime.now().strftime('%Y-%m'); datos = get_expenses_by_category_month(self.db_path, mes_actual)
                 if datos:
-                    img = Image.new('RGB', (400, 400), color='white'); draw = ImageDraw.Draw(img); total = sum(d[1] for d in datos); start_angle = 0
-                    colores = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
-                    for i, d in enumerate(datos):
-                        angle = (d[1] / total) * 360; end_angle = start_angle + angle
-                        draw.pieslice([50, 50, 350, 350], start=start_angle, end=end_angle, fill=colores[i % len(colores)]); start_angle = end_angle
-                    img.save(path_img); path_img_valido = True
+                    img = Image.new('RGB', (400, 400), color='white'); draw = ImageDraw.Draw(img); total = sum(d[1] for d in datos if d[1] is not None)
+                    if total > 0:
+                        start_angle = 0
+                        colores = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c']
+                        for i, d in enumerate(datos):
+                            if d[1] is None: continue
+                            angle = (d[1] / total) * 360; end_angle = start_angle + angle
+                            draw.pieslice([50, 50, 350, 350], start=start_angle, end=end_angle, fill=colores[i % len(colores)]); start_angle = end_angle
+                        img.save(path_img); path_img_valido = True
             except Exception as e_graf: pass
             pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", 'B', 18); pdf.cell(0, 10, "Reporte Financiero Completo", ln=True, align='C')
             pdf.set_font("Arial", 'I', 10); pdf.cell(0, 10, f"Generado el: {date.today().isoformat()}", ln=True, align='C'); pdf.ln(5)
@@ -1360,6 +1458,7 @@ class GastosApp(App):
             pdf.set_font("Arial", '', 10); rows = get_expenses_for_month(self.db_path, datetime.now().strftime('%Y-%m'))
             for row in rows:
                 _, created_at, desc, amount, cat, curr = row[:6]; d_clean = desc.encode('latin-1', 'replace').decode('latin-1'); c_clean = cat.encode('latin-1', 'replace').decode('latin-1')
+                if amount is None: amount = 0
                 pdf.cell(30, 8, created_at[:10], 1); pdf.cell(70, 8, d_clean[:30], 1); pdf.cell(40, 8, c_clean, 1); pdf.cell(40, 8, f"{self.formato(amount)} {curr}", 1); pdf.ln()
             pdf.ln(5)
             if pdf.get_y() > 230: pdf.add_page()
@@ -1368,6 +1467,7 @@ class GastosApp(App):
             pdf.set_font("Arial", '', 10); fijos = get_recurring_expenses(self.db_path)
             if fijos:
                 for f in fijos:
+                    if f[2] is None: continue
                     d_clean = f[1].encode('latin-1', 'replace').decode('latin-1'); pdf.cell(100, 8, d_clean[:40], 1); pdf.cell(40, 8, self.formato(f[2]), 1); pdf.cell(40, 8, f"Día {f[4]}", 1); pdf.ln()
             else: pdf.cell(0, 8, "No hay gastos fijos registrados.", ln=True)
             pdf.ln(5)
@@ -1377,6 +1477,7 @@ class GastosApp(App):
             pdf.set_font("Arial", '', 10); ingresos = get_all_incomes_month(self.db_path, datetime.now().strftime('%Y-%m'))
             if ingresos:
                 for i in ingresos:
+                    if i[2] is None: continue
                     d_clean = i[1].encode('latin-1', 'replace').decode('latin-1'); pdf.cell(100, 8, d_clean[:40], 1); pdf.cell(40, 8, self.formato(i[2]), 1); pdf.cell(40, 8, i[3][:10], 1); pdf.ln()
             else: pdf.cell(0, 8, "No hay ingresos extra este mes.", ln=True)
             pdf.ln(5)
@@ -1386,6 +1487,7 @@ class GastosApp(App):
             pdf.set_font("Arial", '', 10); presupuestos = get_all_category_budgets(self.db_path)
             if presupuestos:
                 for p in presupuestos:
+                    if p[1] is None: continue
                     c_clean = p[0].encode('latin-1', 'replace').decode('latin-1'); pdf.cell(100, 8, c_clean, 1); pdf.cell(40, 8, self.formato(p[1]), 1); pdf.ln()
             else: pdf.cell(0, 8, "No hay presupuestos definidos.", ln=True)
             pdf.ln(5)
@@ -1395,6 +1497,7 @@ class GastosApp(App):
             pdf.set_font("Arial", '', 10); metas = get_savings_goals(self.db_path)
             if metas:
                 for m in metas:
+                    if m[2] is None or m[3] is None: continue
                     n_clean = m[1].encode('latin-1', 'replace').decode('latin-1'); pdf.cell(100, 8, n_clean[:40], 1); pdf.cell(40, 8, self.formato(m[2]), 1); pdf.cell(40, 8, self.formato(m[3]), 1); pdf.ln()
             else: pdf.cell(0, 8, "No hay metas de ahorro.", ln=True)
             pdf.ln(5)
@@ -1404,6 +1507,7 @@ class GastosApp(App):
             pdf.set_font("Arial", '', 10); deudas = get_debts(self.db_path, "pending")
             if deudas:
                 for d in deudas:
+                    if d[2] is None: continue
                     p_clean = d[1].encode('latin-1', 'replace').decode('latin-1'); t_clean = d[3].encode('latin-1', 'replace').decode('latin-1')
                     pdf.cell(80, 8, p_clean[:30], 1); pdf.cell(40, 8, self.formato(d[2]), 1); pdf.cell(60, 8, "Me deben" if t_clean == 'me_deben' else "Yo debo", 1); pdf.ln()
             else: pdf.cell(0, 8, "No hay deudas pendientes.", ln=True)
